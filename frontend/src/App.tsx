@@ -3,6 +3,7 @@ import { ArrowDown, CircleHelp, Menu, PanelLeftOpen } from "lucide-react";
 import { checkHealth } from "./lib/api";
 import { useChat } from "./hooks/useChat";
 import { Composer } from "./components/Composer";
+import { ChatWidget } from "./components/ChatWidget";
 import { Logo } from "./components/Logo";
 import { MessageView } from "./components/MessageView";
 import { SearchDialog } from "./components/SearchDialog";
@@ -74,6 +75,7 @@ function App() {
       <Composer busy={chat.busy} onSend={(message) => void chat.send(message)} onStop={chat.stop} draft={draft} onDraft={setDraft} inputRef={inputRef} />
     </main>
     {searchOpen && <SearchDialog conversations={chat.conversations} onClose={() => setSearchOpen(false)} onSelect={selectChat} />}
+    <ChatWidget chat={chat} healthy={healthy} onConfirm={confirm} />
   </div>;
 }
 

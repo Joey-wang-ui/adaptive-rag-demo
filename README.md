@@ -1,4 +1,15 @@
+## 本仓库：学习与离线网页演示
 
+基于 [JEen-wang/Adaptive-rag](https://github.com/JEen-wang/Adaptive-rag)，保留原项目历史和 MIT 许可证。
+增加了网页右下角聊天弹窗，以及用于 Render 的轻量离线部署配置。
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Joey-wang-ui/adaptive-rag-demo)
+
+部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。Blueprint 使用 `Dockerfile.demo` 和 Free 计划；若平台提示无法使用 Free，先停止，不要直接改为付费计划。
+默认没有真实 LLM、语义 Embedding 或 Cross-Encoder，回答为检索原文节选。下面保留的原项目模型评测结果，不代表本演示的效果。
+此演示尚无用户认证，仅供个人使用；不要输入隐私信息或连接真实业务数据库。SQLite 在容器内，实例重建后可能丢失。
+
+---
 
 <h1 align="center">Adaptive RAG · 电商客服工作流</h1>
 

@@ -1,0 +1,9 @@
+# Render Blueprint for the isolated offline demo, not a production business service.
+services:
+  - type: web
+    name: adaptive-rag-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.demo
+    healthCheckPath: /api/v1/health
+    autoDeploy: false

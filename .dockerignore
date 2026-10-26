@@ -22,3 +22,4 @@ tests
 docs
 *.md
 !README.md
+!knowledge/*.md
