@@ -5,9 +5,11 @@ registry/CDN redirects are accepted. No system DNS, hosts or TLS settings change
 """
 
 import hashlib
+import http.client
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -16,6 +18,12 @@ from pathlib import Path
 REGISTRY = "https://registry.ollama.ai/v2/library/qwen2.5"
 MODEL = "qwen2.5:3b"
 MANIFEST_LIMIT = 1024 * 1024
+RANGE_BYTES = 16 * 1024 * 1024
+MAX_INTERRUPTS = 8
+
+
+class TransferInterrupted(OSError):
+    """A response ended early; retain its bytes for the next Range request."""
 
 
 def official_url(url: str) -> bool:
@@ -69,6 +77,54 @@ def verified(path: Path, entry: dict) -> bool:
         return "sha256:" + hashlib.file_digest(file, "sha256").hexdigest() == entry["digest"]
 
 
+def receive_range(opener, partial: Path, entry: dict, offset: int) -> None:
+    end = min(offset + RANGE_BYTES, entry["size"]) - 1
+    request = urllib.request.Request(REGISTRY + "/blobs/" + entry["digest"])
+    if offset or end < entry["size"] - 1:
+        request.add_header("Range", f"bytes={offset}-{end}")
+    with opener.open(request, timeout=60) as response:
+        if response.status == 206:
+            match = re.fullmatch(
+                r"bytes (\d+)-(\d+)/(\d+)", response.headers.get("Content-Range", "")
+            )
+            if (
+                not match
+                or int(match[1]) != offset
+                or int(match[3]) != entry["size"]
+                or not offset <= int(match[2]) <= end
+            ):
+                raise RuntimeError("Invalid resumed download range; model was not installed.")
+            response_end = int(match[2]) + 1
+        elif response.status == 200:
+            offset = 0  # Server ignored Range; restart instead of appending duplicate bytes.
+            response_end = entry["size"]
+        else:
+            raise RuntimeError(f"Unexpected download status: {response.status}")
+        previous = offset * 100 // entry["size"] // 5
+        with partial.open("ab" if offset else "wb") as file:
+            while offset < response_end:
+                interrupted = False
+                try:
+                    chunk = response.read(1024 * 1024)
+                except http.client.IncompleteRead as error:
+                    chunk = error.partial  # These bytes have not been returned before.
+                    interrupted = True
+                if not chunk:
+                    break
+                offset += len(chunk)
+                if offset > response_end:
+                    raise RuntimeError("Downloaded file exceeds the official response range.")
+                file.write(chunk)
+                progress = offset * 100 // entry["size"]
+                if progress // 5 != previous:
+                    print(f"  {progress}%", flush=True)
+                    previous = progress // 5
+                if interrupted:
+                    break
+    if offset < response_end:
+        raise TransferInterrupted("Response ended before the requested range was complete.")
+
+
 def download_blob(opener, folder: Path, entry: dict) -> None:
     target = folder / entry["digest"].replace(":", "-")
     if verified(target, entry):
@@ -82,36 +138,49 @@ def download_blob(opener, folder: Path, entry: dict) -> None:
             return
         partial.unlink()
         offset = 0
-    request = urllib.request.Request(REGISTRY + "/blobs/" + entry["digest"])
+    print(f"Downloading {target.name[:23]} ({entry['size'] / 1024**2:.1f} MiB)...", flush=True)
     if offset:
-        request.add_header("Range", f"bytes={offset}-")
-    with opener.open(request, timeout=60) as response:
-        if response.status == 206:
-            match = re.fullmatch(
-                r"bytes (\d+)-(\d+)/(\d+)", response.headers.get("Content-Range", "")
+        print(f"Resuming from {offset / 1024**2:.1f} MiB.", flush=True)
+    interrupts = 0
+    while offset < entry["size"]:
+        try:
+            receive_range(opener, partial, entry, offset)
+        except (OSError, http.client.HTTPException) as error:
+            if isinstance(error, urllib.error.HTTPError) and error.code not in {
+                408,
+                429,
+                500,
+                502,
+                503,
+                504,
+            }:
+                raise
+            offset = partial.stat().st_size if partial.exists() else 0
+            interrupts += 1
+            detail = (
+                f"HTTP {error.code}"
+                if isinstance(error, urllib.error.HTTPError)
+                else type(error).__name__
             )
-            if not match or int(match[1]) != offset or int(match[3]) != entry["size"]:
-                raise RuntimeError("Invalid resumed download range; model was not installed.")
-        elif response.status == 200:
-            offset = 0  # Server ignored Range; restart instead of appending duplicate bytes.
-        else:
-            raise RuntimeError(f"Unexpected download status: {response.status}")
-        print(f"Downloading {target.name[:23]} ({entry['size'] / 1024**2:.1f} MiB)...", flush=True)
-        previous = -1
-        with partial.open("ab" if offset else "wb") as file:
-            while chunk := response.read(1024 * 1024):
-                offset += len(chunk)
-                if offset > entry["size"]:
-                    raise RuntimeError("Downloaded file exceeds official size.")
-                file.write(chunk)
-                progress = offset * 100 // entry["size"]
-                if progress // 5 != previous:
-                    print(f"  {progress}%", flush=True)
-                    previous = progress // 5
+            print(
+                f"Transfer interrupted ({detail}); retained {offset / 1024**2:.1f} MiB "
+                f"of {entry['size'] / 1024**2:.1f} MiB.",
+                flush=True,
+            )
+            if interrupts >= MAX_INTERRUPTS:
+                raise RuntimeError(
+                    "Download is still incomplete. Progress is saved; rerun the repair to resume. "
+                    "SHA-256 has NOT been checked yet."
+                ) from None
+            print(f"Retrying from saved bytes ({interrupts}/{MAX_INTERRUPTS})...", flush=True)
+            time.sleep(min(2**interrupts, 10))
+        offset = partial.stat().st_size if partial.exists() else 0
+    print("All bytes received; verifying SHA-256...", flush=True)
     if not verified(partial, entry):
         partial.unlink(missing_ok=True)
         raise RuntimeError(
-            "SHA-256 or size check failed; model was not installed. Retry the repair."
+            "The complete file failed SHA-256 verification and was discarded. "
+            "Model was not installed. Retry the repair."
         )
     partial.replace(target)
 

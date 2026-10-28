@@ -1,7 +1,11 @@
 import hashlib
+import http.client
 import io
 import json
+import threading
+import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -74,7 +78,7 @@ def test_repair_resumes_or_restarts_when_range_is_ignored(tmp_path, resumed):
     opener = Opener([response])
     downloader.download_blob(opener, tmp_path, descriptor)
     assert target.read_bytes() == data
-    assert opener.requests[0].get_header("Range") == "bytes=4-"
+    assert opener.requests[0].get_header("Range") == f"bytes=4-{len(data) - 1}"
     assert not target.with_suffix(".repair-part").exists()
 
 
@@ -127,3 +131,125 @@ def test_repair_rejects_wrong_resume_offset(tmp_path):
     with pytest.raises(RuntimeError, match="range"):
         downloader.download_blob(opener, tmp_path, descriptor)
     assert partial.read_bytes() == b"we"
+
+
+def test_short_response_retries_from_saved_bytes_instead_of_deleting(monkeypatch, tmp_path):
+    data = b"weights-that-were-interrupted"
+    descriptor = entry(data)
+    opener = Opener(
+        [
+            Response(data[:10]),
+            Response(data[10:], 206, {"Content-Range": f"bytes 10-{len(data) - 1}/{len(data)}"}),
+        ]
+    )
+    monkeypatch.setattr(downloader.time, "sleep", lambda seconds: None)
+    downloader.download_blob(opener, tmp_path, descriptor)
+    assert opener.requests[1].get_header("Range") == f"bytes=10-{len(data) - 1}"
+    assert (tmp_path / descriptor["digest"].replace(":", "-")).read_bytes() == data
+
+
+def test_exhausted_retries_preserve_partial_and_next_run_resumes(monkeypatch, tmp_path):
+    data = b"weights-that-were-interrupted"
+    descriptor = entry(data)
+    partial = (tmp_path / descriptor["digest"].replace(":", "-")).with_suffix(".repair-part")
+    monkeypatch.setattr(downloader, "MAX_INTERRUPTS", 2)
+    monkeypatch.setattr(downloader.time, "sleep", lambda seconds: None)
+    opener = Opener(
+        [
+            Response(data[:8]),
+            Response(b"", 206, {"Content-Range": f"bytes 8-{len(data) - 1}/{len(data)}"}),
+        ]
+    )
+    with pytest.raises(RuntimeError, match="Progress is saved"):
+        downloader.download_blob(opener, tmp_path, descriptor)
+    assert partial.read_bytes() == data[:8]
+    resumed = Opener(
+        [Response(data[8:], 206, {"Content-Range": f"bytes 8-{len(data) - 1}/{len(data)}"})]
+    )
+    downloader.download_blob(resumed, tmp_path, descriptor)
+    assert resumed.requests[0].get_header("Range") == f"bytes=8-{len(data) - 1}"
+    assert not partial.exists()
+
+
+def test_downloads_bounded_ranges_until_whole_blob_verified(monkeypatch, tmp_path):
+    data = b"weights-from-multiple-ranges"
+    descriptor = entry(data)
+    monkeypatch.setattr(downloader, "RANGE_BYTES", 8)
+    responses = []
+    ranges = []
+    for offset in range(0, len(data), 8):
+        end = min(offset + 8, len(data)) - 1
+        ranges.append(f"bytes={offset}-{end}")
+        responses.append(
+            Response(
+                data[offset : end + 1], 206, {"Content-Range": f"bytes {offset}-{end}/{len(data)}"}
+            )
+        )
+    opener = Opener(responses)
+    downloader.download_blob(opener, tmp_path, descriptor)
+    assert [request.get_header("Range") for request in opener.requests] == ranges
+    assert (tmp_path / descriptor["digest"].replace(":", "-")).read_bytes() == data
+
+
+def test_incomplete_read_keeps_its_bytes_before_retry(monkeypatch, tmp_path):
+    data = b"weights-after-an-incomplete-read"
+    descriptor = entry(data)
+
+    class IncompleteResponse(Response):
+        def read(self, size=-1):
+            raise http.client.IncompleteRead(data[:5], len(data) - 5)
+
+    opener = Opener(
+        [
+            IncompleteResponse(b""),
+            Response(data[5:], 206, {"Content-Range": f"bytes 5-{len(data) - 1}/{len(data)}"}),
+        ]
+    )
+    monkeypatch.setattr(downloader.time, "sleep", lambda seconds: None)
+    downloader.download_blob(opener, tmp_path, descriptor)
+    assert opener.requests[1].get_header("Range") == f"bytes=5-{len(data) - 1}"
+
+
+def test_permanent_http_errors_are_not_retried(monkeypatch, tmp_path):
+    class MissingModel:
+        def open(self, request, **kwargs):
+            raise urllib.error.HTTPError(request.full_url, 404, "missing", {}, None)
+
+    monkeypatch.setattr(downloader.time, "sleep", lambda seconds: pytest.fail("No retry for 404"))
+    with pytest.raises(urllib.error.HTTPError):
+        downloader.download_blob(MissingModel(), tmp_path, entry(b"weights"))
+
+
+def test_real_http_truncation_resumes_and_verifies(monkeypatch, tmp_path):
+    data = b"real-HTTP-truncated-weights"
+    ranges = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            ranges.append(self.headers.get("Range"))
+            offset = 0 if len(ranges) == 1 else 8
+            self.send_response(200 if offset == 0 else 206)
+            self.send_header("Content-Length", str(len(data) - offset))
+            if offset:
+                self.send_header("Content-Range", f"bytes {offset}-{len(data) - 1}/{len(data)}")
+            self.end_headers()
+            self.wfile.write(data[:8] if offset == 0 else data[offset:])
+            self.close_connection = True
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        monkeypatch.setattr(downloader, "REGISTRY", f"http://127.0.0.1:{server.server_port}")
+        monkeypatch.setattr(downloader.time, "sleep", lambda seconds: None)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        downloader.download_blob(opener, tmp_path, entry(data))
+        assert ranges == [None, f"bytes=8-{len(data) - 1}"]
+        assert (tmp_path / entry(data)["digest"].replace(":", "-")).read_bytes() == data
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=3)
