@@ -100,9 +100,16 @@ def serve(python: Path) -> None:
             "LOCAL_EMBEDDING_ENABLED": "false",
             "CROSS_ENCODER_ENABLED": "false",
             "UNSTRUCTURED_ENABLED": "false",
+            "DATABASE_URL": "sqlite+aiosqlite:///./data/local/launcher-demo.db",
+            "REDIS_URL": "",
+            "QDRANT_URL": "",
             "PYTHONIOENCODING": "utf-8",
         }
     )
+    # Seed only this launcher's isolated SQLite database, never the DB from .env.
+    # The seed command inserts missing demo rows and preserves existing order states.
+    print("Preparing sample orders ORD10001-ORD10003 for demo user u_demo...", flush=True)
+    run([str(python), "-m", "scripts.seed_demo"], ROOT, env)
     # Existing .env/credentials are preserved. No local model weights are downloaded.
     with log_path.open("a", encoding="utf-8") as output:
         process = subprocess.Popen(
