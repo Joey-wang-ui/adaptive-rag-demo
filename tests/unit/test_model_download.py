@@ -158,6 +158,7 @@ def test_exhausted_retries_preserve_partial_and_next_run_resumes(monkeypatch, tm
         [
             Response(data[:8]),
             Response(b"", 206, {"Content-Range": f"bytes 8-{len(data) - 1}/{len(data)}"}),
+            Response(b"", 206, {"Content-Range": f"bytes 8-{len(data) - 1}/{len(data)}"}),
         ]
     )
     with pytest.raises(RuntimeError, match="Progress is saved"):
@@ -253,3 +254,58 @@ def test_real_http_truncation_resumes_and_verifies(monkeypatch, tmp_path):
         server.shutdown()
         server.server_close()
         worker.join(timeout=3)
+
+
+def test_progressing_interruptions_do_not_exhaust_the_retry_limit(monkeypatch, tmp_path):
+    data = b"0123456789abcdef"
+    descriptor = entry(data)
+    monkeypatch.setattr(downloader, "MAX_INTERRUPTS", 2)
+    monkeypatch.setattr(downloader.time, "sleep", lambda seconds: None)
+    responses = [Response(data[:4])]
+    for offset in (4, 8, 12):
+        responses.append(
+            Response(
+                data[offset : offset + 4],
+                206,
+                {"Content-Range": f"bytes {offset}-{len(data) - 1}/{len(data)}"},
+            )
+        )
+    downloader.download_blob(Opener(responses), tmp_path, descriptor)
+    assert (tmp_path / descriptor["digest"].replace(":", "-")).read_bytes() == data
+
+
+def test_ignored_range_never_erases_a_longer_saved_prefix(monkeypatch, tmp_path):
+    data = b"0123456789abcdef"
+    descriptor = entry(data)
+    partial = (tmp_path / descriptor["digest"].replace(":", "-")).with_suffix(".repair-part")
+    partial.write_bytes(data[:10])
+    monkeypatch.setattr(downloader, "MAX_INTERRUPTS", 2)
+    monkeypatch.setattr(downloader.time, "sleep", lambda seconds: None)
+    with pytest.raises(RuntimeError, match="Progress is saved"):
+        downloader.download_blob(
+            Opener([Response(data[:4]), Response(data[:6])]), tmp_path, descriptor
+        )
+    assert partial.read_bytes() == data[:10]
+
+
+def test_later_ranges_use_official_cdn_url_without_exposing_signature(
+    monkeypatch, tmp_path, capsys
+):
+    data = b"0123456789abcdef"
+    descriptor = entry(data)
+    final_url = "https://blob.r2.cloudflarestorage.com/model?signature=secret-value"
+
+    class RedirectedResponse(Response):
+        def geturl(self):
+            return final_url
+
+    monkeypatch.setattr(downloader.time, "sleep", lambda seconds: None)
+    opener = Opener(
+        [
+            RedirectedResponse(data[:4]),
+            Response(data[4:], 206, {"Content-Range": f"bytes 4-{len(data) - 1}/{len(data)}"}),
+        ]
+    )
+    downloader.download_blob(opener, tmp_path, descriptor)
+    assert opener.requests[1].full_url == final_url
+    assert "secret-value" not in capsys.readouterr().out

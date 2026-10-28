@@ -19,7 +19,7 @@ REGISTRY = "https://registry.ollama.ai/v2/library/qwen2.5"
 MODEL = "qwen2.5:3b"
 MANIFEST_LIMIT = 1024 * 1024
 RANGE_BYTES = 16 * 1024 * 1024
-MAX_INTERRUPTS = 8
+MAX_INTERRUPTS = 10  # Consecutive attempts with no new bytes, not total interruptions.
 
 
 class TransferInterrupted(OSError):
@@ -77,12 +77,21 @@ def verified(path: Path, entry: dict) -> bool:
         return "sha256:" + hashlib.file_digest(file, "sha256").hexdigest() == entry["digest"]
 
 
-def receive_range(opener, partial: Path, entry: dict, offset: int) -> None:
+def receive_range(
+    opener, partial: Path, entry: dict, offset: int, route: dict | None = None
+) -> None:
     end = min(offset + RANGE_BYTES, entry["size"]) - 1
-    request = urllib.request.Request(REGISTRY + "/blobs/" + entry["digest"])
+    original_url = REGISTRY + "/blobs/" + entry["digest"]
+    request = urllib.request.Request(
+        route.get("url", original_url) if route is not None else original_url,
+        headers={"Accept-Encoding": "identity", "Cache-Control": "no-cache"},
+    )
     if offset or end < entry["size"] - 1:
         request.add_header("Range", f"bytes={offset}-{end}")
     with opener.open(request, timeout=60) as response:
+        final_url = getattr(response, "geturl", lambda: original_url)()
+        if route is not None and official_url(final_url):
+            route["url"] = final_url  # Future ranges go straight to the official CDN.
         if response.status == 206:
             match = re.fullmatch(
                 r"bytes (\d+)-(\d+)/(\d+)", response.headers.get("Content-Range", "")
@@ -95,14 +104,22 @@ def receive_range(opener, partial: Path, entry: dict, offset: int) -> None:
             ):
                 raise RuntimeError("Invalid resumed download range; model was not installed.")
             response_end = int(match[2]) + 1
+            position = offset
         elif response.status == 200:
-            offset = 0  # Server ignored Range; restart instead of appending duplicate bytes.
+            position = 0
             response_end = entry["size"]
+            if offset:
+                print(
+                    "Server ignored Range; keeping saved bytes while reading the response.",
+                    flush=True,
+                )
         else:
             raise RuntimeError(f"Unexpected download status: {response.status}")
-        previous = offset * 100 // entry["size"] // 5
-        with partial.open("ab" if offset else "wb") as file:
-            while offset < response_end:
+        previous = offset * 100 // entry["size"]
+        last_report = time.monotonic()
+        saved = offset
+        with partial.open("ab") as file:
+            while position < response_end:
                 interrupted = False
                 try:
                     chunk = response.read(1024 * 1024)
@@ -111,17 +128,26 @@ def receive_range(opener, partial: Path, entry: dict, offset: int) -> None:
                     interrupted = True
                 if not chunk:
                     break
-                offset += len(chunk)
-                if offset > response_end:
+                new_position = position + len(chunk)
+                if new_position > response_end:
                     raise RuntimeError("Downloaded file exceeds the official response range.")
-                file.write(chunk)
+                # A proxy may return HTTP 200 for a Range request. Skip the old
+                # prefix in that response; never truncate already saved progress.
+                file.write(chunk[max(0, saved - position) :])
+                position = new_position
+                offset = max(saved, position)
                 progress = offset * 100 // entry["size"]
-                if progress // 5 != previous:
-                    print(f"  {progress}%", flush=True)
-                    previous = progress // 5
+                now = time.monotonic()
+                if progress > previous or now - last_report >= 5:
+                    print(
+                        f"  {progress}% ({offset / 1024**2:.1f}/{entry['size'] / 1024**2:.1f} MiB)",
+                        flush=True,
+                    )
+                    previous = progress
+                    last_report = now
                 if interrupted:
                     break
-    if offset < response_end:
+    if position < response_end:
         raise TransferInterrupted("Response ended before the requested range was complete.")
 
 
@@ -141,12 +167,19 @@ def download_blob(opener, folder: Path, entry: dict) -> None:
     print(f"Downloading {target.name[:23]} ({entry['size'] / 1024**2:.1f} MiB)...", flush=True)
     if offset:
         print(f"Resuming from {offset / 1024**2:.1f} MiB.", flush=True)
-    interrupts = 0
+    stalls = 0
+    high_water = offset
+    route = {}
     while offset < entry["size"]:
         try:
-            receive_range(opener, partial, entry, offset)
+            receive_range(opener, partial, entry, offset, route)
         except (OSError, http.client.HTTPException) as error:
-            if isinstance(error, urllib.error.HTTPError) and error.code not in {
+            expired_cdn_url = (
+                isinstance(error, urllib.error.HTTPError) and error.code == 403 and bool(route)
+            )
+            if expired_cdn_url:
+                route.clear()  # Get a fresh official signed URL after expiry.
+            elif isinstance(error, urllib.error.HTTPError) and error.code not in {
                 408,
                 429,
                 500,
@@ -156,7 +189,11 @@ def download_blob(opener, folder: Path, entry: dict) -> None:
             }:
                 raise
             offset = partial.stat().st_size if partial.exists() else 0
-            interrupts += 1
+            if offset > high_water:
+                high_water = offset
+                stalls = 0
+            else:
+                stalls += 1
             detail = (
                 f"HTTP {error.code}"
                 if isinstance(error, urllib.error.HTTPError)
@@ -167,14 +204,21 @@ def download_blob(opener, folder: Path, entry: dict) -> None:
                 f"of {entry['size'] / 1024**2:.1f} MiB.",
                 flush=True,
             )
-            if interrupts >= MAX_INTERRUPTS:
+            if stalls >= MAX_INTERRUPTS:
                 raise RuntimeError(
-                    "Download is still incomplete. Progress is saved; rerun the repair to resume. "
+                    "Repeated attempts made no new progress. Check your network/proxy connection. "
+                    "Progress is saved; rerun the installer to resume. "
                     "SHA-256 has NOT been checked yet."
                 ) from None
-            print(f"Retrying from saved bytes ({interrupts}/{MAX_INTERRUPTS})...", flush=True)
-            time.sleep(min(2**interrupts, 10))
+            print(
+                f"Resuming automatically; consecutive attempts with no progress: {stalls}/{MAX_INTERRUPTS}.",
+                flush=True,
+            )
+            time.sleep(min(2 ** min(stalls, 4), 10))
         offset = partial.stat().st_size if partial.exists() else 0
+        if offset > high_water:
+            high_water = offset
+            stalls = 0
     print("All bytes received; verifying SHA-256...", flush=True)
     if not verified(partial, entry):
         partial.unlink(missing_ok=True)

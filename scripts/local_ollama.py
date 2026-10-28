@@ -7,7 +7,7 @@ import subprocess
 import time
 import urllib.request
 import webbrowser
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -29,7 +29,13 @@ def api(path: str, payload: dict | None = None, *, timeout: float = 3) -> dict:
 
 
 @contextmanager
-def ready_model(root: Path, model: str) -> Iterator[dict[str, str]]:
+def ready_model(
+    root: Path,
+    model: str,
+    *,
+    install_missing: Callable[[], None] | None = None,
+    warmup_timeout: float = 180,
+) -> Iterator[dict[str, str]]:
     if not model.strip() or model.startswith("-"):
         raise RuntimeError("Choose a valid Ollama model name.")
     executable = shutil.which("ollama")
@@ -71,6 +77,17 @@ def ready_model(root: Path, model: str) -> Iterator[dict[str, str]]:
                     time.sleep(0.5)
         installed = {entry.get("name") or entry.get("model") for entry in tags.get("models", [])}
         expected = model if ":" in model else model + ":latest"
+        if expected not in installed and install_missing is not None:
+            install_missing()
+            tags = api("/api/tags")
+            installed = {
+                entry.get("name") or entry.get("model") for entry in tags.get("models", [])
+            }
+            if expected not in installed:
+                raise RuntimeError(
+                    "The downloaded model is not visible to Ollama. Check that Ollama runs "
+                    "as this Windows user and uses the same OLLAMA_MODELS directory."
+                )
         if expected not in installed:
             print(
                 f"Downloading {model}. This can require several GB and several minutes...",
@@ -98,7 +115,7 @@ def ready_model(root: Path, model: str) -> Iterator[dict[str, str]]:
                 "format": "json",
                 "options": {"num_ctx": 4096, "num_predict": 40, "temperature": 0},
             },
-            timeout=180,
+            timeout=warmup_timeout,
         )
         try:
             valid = json.loads(result["message"]["content"]).get("ok") is True

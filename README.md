@@ -11,6 +11,8 @@ license: mit
 
 ## 本仓库：学习与离线网页演示
 
+**推荐：Windows 自动安装并运行本地模型。** 下载并完整解压本仓库 ZIP，双击 **`install-and-run.cmd`**。它会复用已安装的软件，通过 WinGet 安装缺失的 Python 3.12、Node.js LTS 和 Ollama，安装项目依赖，下载或续传官方 Qwen2.5 3B，校验文件并测试真实生成，然后启动聊天网页。软件安装可能需要 Windows 授权；缺少 WinGet 或网络不可用时会明确停止。保留窗口，按 Ctrl+C 停止；以后仍双击同一文件。详见 [自动安装说明](DEPLOYMENT.md#windows-自动安装并运行推荐)。
+
 **Windows 本地启动：** 安装 Python 3.12 和 Node.js 24 LTS 后，下载并完整解压本仓库 ZIP，双击根目录的 `start-local.cmd`。它会创建虚拟环境、安装依赖、构建网页、准备隔离的演示订单并自动打开浏览器；首次运行需要联网下载依赖。无需激活环境、修改 PowerShell 执行策略或安装 Docker。运行时保留命令窗口，按 Ctrl+C 停止。详见 [本地启动说明](DEPLOYMENT.md#windows-本地启动)。
 
 **使用真实本地模型：** 先安装 [Ollama Windows](https://ollama.com/download/windows)，然后双击 `start-local-model.cmd`。默认准备 `qwen2.5:3b`（模型下载约 2GB，运行还需额外内存），先测试真实 JSON 生成，再启动网页。无需模型 API Key。原 `start-local.cmd` 保持原有配置/离线路径。详见 [Ollama 说明](DEPLOYMENT.md#ollama-本地生成模型)。
@@ -21,7 +23,7 @@ license: mit
 当前采用 Windows 本地启动。Render 和 Hugging Face 配置保留为备选，账号可能要求绑卡或付费，不保证免费托管可用。代码下载：[GitHub ZIP](https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/heads/main.zip)。
 
 部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。根目录 `Dockerfile` 使用轻量离线配置；原模型镜像配置保存在 `Dockerfile.models`。Render 配置作为备选保留。
-默认没有真实 LLM、语义 Embedding 或 Cross-Encoder，回答为检索原文节选。下面保留的原项目模型评测结果，不代表本演示的效果。
+容器与原 `start-local.cmd` 在未配置生成模型时使用检索原文节选；`install-and-run.cmd` 则必须通过真实 Ollama 生成检查才启动网页。上述轻量启动器仍不使用真实语义 Embedding 或 Cross-Encoder。下面保留的原项目模型评测结果，不代表本演示的效果。
 此演示尚无用户认证，仅供个人使用；不要输入隐私信息或连接真实业务数据库。SQLite 在容器内，实例重建后可能丢失。
 
 ---
