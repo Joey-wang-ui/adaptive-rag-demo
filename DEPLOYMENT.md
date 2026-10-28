@@ -39,6 +39,12 @@
 
 手动配置应用时，可设置 `LLM_BACKEND=ollama`、`OLLAMA_BASE_URL=http://127.0.0.1:11434`、`OLLAMA_MODEL=qwen2.5:3b`，然后运行 Uvicorn。默认 `LLM_BACKEND=auto` 保留原 DeepSeek/离线选择逻辑。
 
+### 模型下载遇到 Fake-IP / non-public 错误
+
+若 Ollama 报 `redirect target not allowed ... resolves to non-public 198.18.x.x`，可关闭失败的启动窗口，双击 `repair-model-download.cmd`。此入口仅下载官方 `qwen2.5:3b`：通过 Python 标准 HTTPS 下载器（支持 Windows 系统代理）读取官方清单，限制跳转到官方仓库/CDN，逐文件校验清单中的大小与 SHA-256，再将清单原子写入 Ollama 模型目录，随后调用原模型启动器做真实 JSON 生成检查。默认目录为 `%USERPROFILE%\.ollama\models`，如设置 `OLLAMA_MODELS` 则使用该目录；Ollama 服务必须使用相同目录及 Windows 用户。修复时不要同时用其他窗口下载同一模型。
+
+不修改系统 DNS、hosts 或代理设置，不关闭 TLS 验证，不下载其他模型，不清除已有模型。网络中断保留 `.repair-part` 分片供下次续传；校验失败不发布新清单。正常的网络/代理连接仍然需要可用，若官方地址不可达仍会失败。只有修复后的原启动器真实生成检查通过，才确认模型可用。备用下载路径的模拟测试不等于已在用户 Windows 网络完成真实模型下载。
+
 ## Render（备选）
 
 本仓库保留 JEen-wang/Adaptive-rag 原始实现与 MIT 许可证，增加聊天弹窗和独立部署配置。首版验证网页、检索、API 和 SSE 的运行链路，不宣称真实模型效果。

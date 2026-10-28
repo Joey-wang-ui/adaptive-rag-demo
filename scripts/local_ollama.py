@@ -78,7 +78,14 @@ def ready_model(root: Path, model: str) -> Iterator[dict[str, str]]:
             )
             pull_env = os.environ.copy()
             pull_env["OLLAMA_HOST"] = "127.0.0.1:11434"
-            subprocess.run([executable, "pull", model], cwd=root, env=pull_env, check=True)
+            try:
+                subprocess.run([executable, "pull", model], cwd=root, env=pull_env, check=True)
+            except subprocess.CalledProcessError as error:
+                raise RuntimeError(
+                    "Ollama model download failed. If the error mentions 'non-public' or "
+                    "'redirect target not allowed', run repair-model-download.cmd for the "
+                    "official Qwen2.5 3B download with SHA-256 verification."
+                ) from error
         print(f"Warming up {model} and checking real JSON generation...", flush=True)
         result = api(
             "/api/chat",
