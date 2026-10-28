@@ -1,11 +1,22 @@
+---
+title: Adaptive RAG Demo
+emoji: 💬
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 8000
+pinned: false
+license: mit
+---
+
 ## 本仓库：学习与离线网页演示
 
 基于 [JEen-wang/Adaptive-rag](https://github.com/JEen-wang/Adaptive-rag)，保留原项目历史和 MIT 许可证。
-增加了网页右下角聊天弹窗，以及用于 Render 的轻量离线部署配置。
+增加了网页右下角聊天弹窗，以及用于 Hugging Face Docker Spaces 的轻量离线部署配置。
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Joey-wang-ui/adaptive-rag-demo)
+优先部署到 [Hugging Face Docker Spaces](https://huggingface.co/new-space)。代码下载：[GitHub ZIP](https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/heads/main.zip)。
 
-部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。Blueprint 使用 `Dockerfile.demo` 和 Free 计划；若平台提示无法使用 Free，先停止，不要直接改为付费计划。
+部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。根目录 `Dockerfile` 使用轻量离线配置；原模型镜像配置保存在 `Dockerfile.models`。Render 配置作为备选保留。
 默认没有真实 LLM、语义 Embedding 或 Cross-Encoder，回答为检索原文节选。下面保留的原项目模型评测结果，不代表本演示的效果。
 此演示尚无用户认证，仅供个人使用；不要输入隐私信息或连接真实业务数据库。SQLite 在容器内，实例重建后可能丢失。
 

@@ -1,4 +1,21 @@
-# Render 网页演示部署
+# Hugging Face Spaces 网页演示部署
+
+优先使用 Hugging Face 的 Docker Space，保留 Render 为备选。免费硬件和账号验证是否可用，以你账号的实际页面为准。
+
+## Hugging Face Docker Space
+
+1. 注册或登录 https://huggingface.co ，完成账号要求的邮箱验证。
+2. 打开 https://huggingface.co/new-space ，名称可用 `adaptive-rag-demo`。
+3. SDK 选择 Docker，模板选择 Blank（如显示此选项）；硬件选择标为免费的 CPU Basic，公开演示选择 Public。不要选择 GPU 或其他收费硬件。
+4. 创建后，将本仓库内容上传到 Space。可下载 https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/heads/main.zip ，解压后进入 `adaptive-rag-demo-main`，上传其中的文件和文件夹，不要把这一层目录套在外面。
+5. 在 Space 的 Files 页面确认根目录直接包含 `Dockerfile`、`README.md`、`pyproject.toml`、`app/`、`frontend/`、`knowledge/`，并包含 `.dockerignore`。README 原有的 YAML 元数据应保留，`sdk: docker`、`app_port: 8000`。
+6. 提交文件后会触发构建，查看 Logs；等待显示 Running 后打开 App。Dockerfile、README 配置端口统一为 8000；无需添加 PORT、API Key 或模型下载配置。
+
+上传的是代码，不包括 GitHub 的历史、本地 `.env` 或数据库。也可以通过 Hugging Face 官方 Git/Hub API 上传，需账号拥有写入目标 Space 的权限；不要将访问令牌写入代码或聊天。
+
+仓库里的 `Dockerfile` 与 `Dockerfile.demo` 当前相同，均为轻量离线镜像，支持用户 ID 1000。上游较重的镜像配置保留在 `Dockerfile.models`，本演示不使用它。
+
+## Render（备选）
 
 本仓库保留 JEen-wang/Adaptive-rag 原始实现与 MIT 许可证，增加聊天弹窗和独立部署配置。首版验证网页、检索、API 和 SSE 的运行链路，不宣称真实模型效果。
 
@@ -24,7 +41,7 @@
 
 `Dockerfile.demo` 安装基础 Python 依赖，构建 React 静态文件，关闭本地 Embedding、Cross-Encoder、Unstructured 和 MCP，使用 SQLite、内存索引、哈希向量及词面重排。不下载模型。
 
-原 `Dockerfile` 保留不变，它会安装额外的模型依赖；本次 Blueprint 不使用它。向真实模型升级应作为后续独立步骤，并重新验证生成、路由和判断行为。
+原模型镜像配置保存在 `Dockerfile.models`，它会安装额外的模型依赖；本次演示不使用它。向真实模型升级应作为后续独立步骤，并重新验证生成、路由和判断行为。
 
 当前 API 没有完整身份认证，会话隔离和人工确认也存在原项目已披露的限制。仅作隔离的个人演示，不应对不可信用户开放，不输入敏感信息，不连接真实业务库。容器中的 SQLite 不作持久性保证；限额、休眠和计费以 Render 页面为准。
 
