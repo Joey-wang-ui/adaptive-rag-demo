@@ -11,10 +11,12 @@ license: mit
 
 ## 本仓库：学习与离线网页演示
 
+**Windows 本地启动：** 安装 Python 3.12 和 Node.js 24 LTS 后，下载并完整解压本仓库 ZIP，双击根目录的 `start-local.cmd`。它会创建虚拟环境、安装依赖、构建网页并自动打开浏览器；首次运行需要联网下载依赖。无需激活环境、修改 PowerShell 执行策略或安装 Docker。运行时保留命令窗口，按 Ctrl+C 停止。详见 [本地启动说明](DEPLOYMENT.md#windows-本地启动)。
+
 基于 [JEen-wang/Adaptive-rag](https://github.com/JEen-wang/Adaptive-rag)，保留原项目历史和 MIT 许可证。
 增加了网页右下角聊天弹窗，以及用于 Hugging Face Docker Spaces 的轻量离线部署配置。
 
-优先部署到 [Hugging Face Docker Spaces](https://huggingface.co/new-space)。代码下载：[GitHub ZIP](https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/heads/main.zip)。
+当前采用 Windows 本地启动。Render 和 Hugging Face 配置保留为备选，账号可能要求绑卡或付费，不保证免费托管可用。代码下载：[GitHub ZIP](https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/heads/main.zip)。
 
 部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。根目录 `Dockerfile` 使用轻量离线配置；原模型镜像配置保存在 `Dockerfile.models`。Render 配置作为备选保留。
 默认没有真实 LLM、语义 Embedding 或 Cross-Encoder，回答为检索原文节选。下面保留的原项目模型评测结果，不代表本演示的效果。

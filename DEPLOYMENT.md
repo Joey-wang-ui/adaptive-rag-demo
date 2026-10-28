@@ -1,12 +1,24 @@
-# Hugging Face Spaces 网页演示部署
+# 本地启动与可选网页托管
 
-优先使用 Hugging Face 的 Docker Space，保留 Render 为备选。免费硬件和账号验证是否可用，以你账号的实际页面为准。
+## Windows 本地启动
+
+1. 先安装 Python 3.12（含 `py` 启动器）与 Node.js 24 LTS。
+2. 下载 GitHub ZIP 并完整解压，双击 `start-local.cmd`。不要在 ZIP 压缩窗口中直接运行。
+3. 第一次运行会自动安装 Python 开发依赖、执行 `npm ci` 和前端构建。完成后自动打开浏览器，点击右下角 Agent 助手即可聊天。
+4. 如果已有旧版项目，先备份个人 `.env` 和 `data/local`，将新版解压到另一个新目录，避免覆盖个人文件。本启动器不写入或复制 `.env`，不包含密钥，不改变已有凭据。
+5. 启动器默认关闭本地 Embedding、Cross-Encoder 和 Unstructured，不下载模型权重；没有生成模型凭据时使用离线资料节选。已有远程模型配置仍会按应用原规则使用。
+6. 服务只监听本机 `127.0.0.1`，自动在 8000–8020 中选择空闲端口，网页和 API 由同一服务提供；没有公网网址。保留命令窗口，按 Ctrl+C 退出。服务器日志在 `logs/local-server.log`。
+7. 之后可继续双击同一个脚本启动。项目依赖声明和锁文件未变化时复用已安装依赖；网页每次重新构建。安装失败会停留在窗口显示错误，不关闭 TLS 验证，不修改系统执行策略。
+
+启动器的 Python 检查与服务启动逻辑已在 Codex Linux 环境验证；Windows CMD 的实际双击流程仍需在用户 Windows 电脑确认。
+
+当前采用 Windows 本地运行。以下云端配置仅作为备选，尚未验证公网部署成功。Docker Space、免费硬件和账号验证是否可用，以账号实际页面为准；若要求订阅或绑卡，可以继续使用本地版本。
 
 ## Hugging Face Docker Space
 
 1. 注册或登录 https://huggingface.co ，完成账号要求的邮箱验证。
 2. 打开 https://huggingface.co/new-space ，名称可用 `adaptive-rag-demo`。
-3. SDK 选择 Docker，模板选择 Blank（如显示此选项）；硬件选择标为免费的 CPU Basic，公开演示选择 Public。不要选择 GPU 或其他收费硬件。
+3. SDK 选择 Docker，模板选择 Blank（如显示此选项）；硬件如有免费的 CPU Basic 可选择，公开演示选择 Public。若 Docker SDK 标为付费或要求订阅 PRO，先停止，不要为本演示开通收费服务。
 4. 创建后，将本仓库内容上传到 Space。可下载 https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/heads/main.zip ，解压后进入 `adaptive-rag-demo-main`，上传其中的文件和文件夹，不要把这一层目录套在外面。
 5. 在 Space 的 Files 页面确认根目录直接包含 `Dockerfile`、`README.md`、`pyproject.toml`、`app/`、`frontend/`、`knowledge/`，并包含 `.dockerignore`。README 原有的 YAML 元数据应保留，`sdk: docker`、`app_port: 8000`。
 6. 提交文件后会触发构建，查看 Logs；等待显示 Running 后打开 App。Dockerfile、README 配置端口统一为 8000；无需添加 PORT、API Key 或模型下载配置。
