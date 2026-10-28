@@ -1,5 +1,16 @@
 # 本地启动与可选网页托管
 
+## DeepSeek 官方 API 启动
+
+1. 登录 [DeepSeek 开放平台](https://platform.deepseek.com/)，在 [API Keys](https://platform.deepseek.com/api_keys) 创建密钥并确认账号有可用余额或额度。不要把密钥发到聊天里、写进源码或提交 Git。API 按量计费，项目的路由、生成、检查等节点可能分别调用模型，聊天次数不等于 API 请求次数。
+2. 本入口需要已安装的 Python 3.12 与兼容的 Node.js/npm。旧项目已能构建网页时，可将新版根目录的 `start-api.cmd` 和 `scripts` 文件夹复制到原项目根目录，合并添加脚本，保留原来的 `.venv`、`frontend/node_modules`、`.env` 和 `data`，无需重新下载本地模型。
+3. 双击 **`start-api.cmd`**。准备项目依赖后，在终端里粘贴 DeepSeek API Key 并回车；输入隐藏、不显示字符。密钥只保留在本次进程与子进程环境中，不保存到文件，也不放入命令参数。每次启动可重新输入；若自己已在环境变量或本机 `.env` 中配置了 `DEEPSEEK_API_KEY`，直接回车复用即可。
+4. 此入口明确覆盖 `LLM_BACKEND=auto`、`DEEPSEEK_BASE_URL=https://api.deepseek.com` 和 `DEEPSEEK_MODEL=deepseek-chat`，覆盖旧 Ollama 选择以及旧自定义模型地址。当前入口只使用 DeepSeek 官方接口，不接受其他平台的密钥。直接复用原项目的 DeepSeek Provider，在项目虚拟环境中发起一次最多 64 个输出 token 的 JSON 生成检查；这次检查会实际调用 API，可能计费，不以 `ping()` 或 Key 非空冒充可用。
+5. 密钥无效、余额不足、限流、网络错误或生成检查未通过时停止，不启动网页。检查成功后才启动原 SQLite/内存演示应用、检查健康状态并打开聊天网页。运行时个别模型调用失败仍遵循原项目的规则/节选降级，需依据具体回答与后端日志判断。Embedding 与重排仍为降级模式，生成使用真实远程 LLM。
+6. 保持终端窗口打开，Ctrl+C 停止；下次仍双击 `start-api.cmd`。不要用 `install-and-run.cmd` 启动 API 模式，因为那个入口用于 Ollama。本入口不安装、启动或修复 Ollama，不写 `.env`，不修改系统 DNS/代理/TLS。问题诊断只显示安全的错误解释，不输出密钥。
+
+API 请求格式、生成验证、失败时不打开网页与密钥不进入输出/命令参数等使用模拟 HTTP 测试验证。当前 Codex 环境没有用户的 DeepSeek 密钥，尚未完成真实远程 API 调用；真实连通性和额度需要在用户电脑首次运行时验证。
+
 ## Windows 自动安装并运行（推荐）
 
 1. 在 Windows 10/11 上，先关闭旧项目和旧下载窗口，将新版 ZIP 完整解压到新目录，然后双击根目录 **`install-and-run.cmd`**。以后也只用这一个入口。

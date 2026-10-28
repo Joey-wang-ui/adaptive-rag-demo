@@ -11,6 +11,8 @@ license: mit
 
 ## 本仓库：学习与离线网页演示
 
+**使用 DeepSeek 官方 API：** 双击 **`start-api.cmd`**，在本机终端隐藏输入 API Key（输入时不显示字符），或直接回车复用环境变量 / `.env` 中已有的 `DEEPSEEK_API_KEY`。密钥不写入文件或命令参数；先通过一次最多 64 个输出 token 的真实 JSON 生成检查，再启动聊天网页。无需 Ollama 或模型下载。API 按供应商规则计费，需账号有可用余额/额度；一次聊天可能多次调用模型。详见 [API 启动说明](DEPLOYMENT.md#deepseek-官方-api-启动)。
+
 **推荐：Windows 自动安装并运行本地模型。** 下载并完整解压本仓库 ZIP，双击 **`install-and-run.cmd`**。它会复用已安装的软件，通过 WinGet 安装缺失的 Python 3.12、Node.js LTS 和 Ollama，安装项目依赖，下载或续传官方 Qwen2.5 3B，校验文件并测试真实生成，然后启动聊天网页。软件安装可能需要 Windows 授权；缺少 WinGet 或网络不可用时会明确停止。保留窗口，按 Ctrl+C 停止；以后仍双击同一文件。详见 [自动安装说明](DEPLOYMENT.md#windows-自动安装并运行推荐)。
 
 **Windows 本地启动：** 安装 Python 3.12 和 Node.js 24 LTS 后，下载并完整解压本仓库 ZIP，双击根目录的 `start-local.cmd`。它会创建虚拟环境、安装依赖、构建网页、准备隔离的演示订单并自动打开浏览器；首次运行需要联网下载依赖。无需激活环境、修改 PowerShell 执行策略或安装 Docker。运行时保留命令窗口，按 Ctrl+C 停止。详见 [本地启动说明](DEPLOYMENT.md#windows-本地启动)。
