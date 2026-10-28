@@ -13,6 +13,7 @@ from app.providers.base import LLMProvider
 from app.providers.deepseek import DeepSeekProvider
 from app.providers.embeddings import build_embedding_provider
 from app.providers.fake import OfflineLLMProvider
+from app.providers.ollama import OllamaProvider
 from app.providers.reranker import CrossEncoderRerankProvider
 from app.repositories.db import create_engine, create_session_factory, init_schema
 from app.retrieval.cache import MemoryRetrievalCache, RedisRetrievalCache
@@ -93,9 +94,11 @@ async def build_retrieval(settings: Settings, redis):
 
 async def build_container(settings: Settings, seed: bool = False) -> AppContainer:
     """Compose runtime services from independently testable infrastructure builders."""
-    llm: LLMProvider = (
-        DeepSeekProvider(settings) if settings.llm_configured else OfflineLLMProvider()
-    )
+    llm: LLMProvider
+    if settings.llm_backend == "ollama":
+        llm = OllamaProvider(settings)
+    else:
+        llm = DeepSeekProvider(settings) if settings.llm_configured else OfflineLLMProvider()
     engine, session_factory, redis = await build_infrastructure(settings)
     rate_limiter = (
         RedisRateLimiter(redis, limit=settings.rate_limit_per_minute)

@@ -86,7 +86,7 @@ def available_port() -> int:
     raise RuntimeError("Ports 8000-8020 are busy. Close an older demo before retrying.")
 
 
-def serve(python: Path) -> None:
+def serve(python: Path, overrides: dict[str, str] | None = None) -> None:
     logs = ROOT / "logs"
     logs.mkdir(exist_ok=True)
     log_path = logs / "local-server.log"
@@ -106,6 +106,8 @@ def serve(python: Path) -> None:
             "PYTHONIOENCODING": "utf-8",
         }
     )
+    if overrides:
+        env.update(overrides)
     # Seed only this launcher's isolated SQLite database, never the DB from .env.
     # The seed command inserts missing demo rows and preserves existing order states.
     print("Preparing sample orders ORD10001-ORD10003 for demo user u_demo...", flush=True)
@@ -166,11 +168,20 @@ def main() -> None:
     parser.add_argument(
         "--check", action="store_true", help="Check prerequisites without installing or starting."
     )
+    parser.add_argument("--ollama", action="store_true", help="Use a real local Ollama model.")
+    parser.add_argument("--model", default="qwen2.5:3b", help="Ollama model to download and use.")
     args = parser.parse_args()
     _, npm = prerequisites()
     print("Python and Node.js checks passed.", flush=True)
     if not args.check:
-        serve(setup(npm))
+        python = setup(npm)
+        if args.ollama:
+            from local_ollama import ready_model
+
+            with ready_model(ROOT, args.model) as overrides:
+                serve(python, overrides)
+        else:
+            serve(python)
 
 
 if __name__ == "__main__":
@@ -178,6 +189,6 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\nStopped.")
-    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"\nERROR: {error}", file=sys.stderr)
         raise SystemExit(1) from None

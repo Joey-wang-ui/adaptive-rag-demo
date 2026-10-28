@@ -3,6 +3,7 @@
 import os
 
 os.environ["APP_ENV"] = "testing"
+os.environ["LLM_BACKEND"] = "auto"
 os.environ["DEEPSEEK_API_KEY"] = ""
 os.environ["CROSS_ENCODER_FORCE"] = "false"
 os.environ["LOCAL_EMBEDDING_FORCE"] = "false"

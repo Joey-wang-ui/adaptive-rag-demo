@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
 
+    llm_backend: Literal["auto", "ollama"] = "auto"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:3b"
+    ollama_timeout_seconds: float = 180.0
+    ollama_num_ctx: int = 4096
+
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"

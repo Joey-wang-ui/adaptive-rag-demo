@@ -13,6 +13,8 @@ license: mit
 
 **Windows 本地启动：** 安装 Python 3.12 和 Node.js 24 LTS 后，下载并完整解压本仓库 ZIP，双击根目录的 `start-local.cmd`。它会创建虚拟环境、安装依赖、构建网页、准备隔离的演示订单并自动打开浏览器；首次运行需要联网下载依赖。无需激活环境、修改 PowerShell 执行策略或安装 Docker。运行时保留命令窗口，按 Ctrl+C 停止。详见 [本地启动说明](DEPLOYMENT.md#windows-本地启动)。
 
+**使用真实本地模型：** 先安装 [Ollama Windows](https://ollama.com/download/windows)，然后双击 `start-local-model.cmd`。默认准备 `qwen2.5:3b`（模型下载约 2GB，运行还需额外内存），先测试真实 JSON 生成，再启动网页。无需模型 API Key。原 `start-local.cmd` 保持原有配置/离线路径。详见 [Ollama 说明](DEPLOYMENT.md#ollama-本地生成模型)。
+
 基于 [JEen-wang/Adaptive-rag](https://github.com/JEen-wang/Adaptive-rag)，保留原项目历史和 MIT 许可证。
 增加了网页右下角聊天弹窗，以及用于 Hugging Face Docker Spaces 的轻量离线部署配置。
 

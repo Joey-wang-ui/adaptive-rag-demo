@@ -27,6 +27,18 @@
 
 仓库里的 `Dockerfile` 与 `Dockerfile.demo` 当前相同，均为轻量离线镜像，支持用户 ID 1000。上游较重的镜像配置保留在 `Dockerfile.models`，本演示不使用它。
 
+## Ollama 本地生成模型
+
+1. 安装 https://ollama.com/download/windows ，保持其本地服务运行。
+2. 双击根目录 `start-local-model.cmd`。启动器会复用或启动本机 `127.0.0.1:11434` 的 Ollama，下载缺失的 `qwen2.5:3b`，进行一次真实的 JSON 生成测试，然后打开聊天网页。默认模型下载约 2GB，运行还需要模型、上下文缓存及系统内存；CPU 推理可能较慢。
+3. 也可在 CMD 中执行 `start-local-model.cmd qwen2.5:1.5b` 选择较小模型；选择以本机内存和性能为准，不保证小模型的复杂路由、规划或裁判质量。
+4. 使用 Ollama 原生 `/api/chat` 接口和 JSON 格式，不借用 DeepSeek 密钥、不写 `.env`。仅本次应用进程设置 `LLM_BACKEND=ollama`、模型名称、4096 上下文预算。现有远程生成配置不会在此模式下被选择。Embedding 和重排仍是轻量降级模式，不宣称完整真实向量 RAG。
+5. 模型和 JSON 预热检查失败时停止启动并显示错误，避免把离线回复标成模型接入成功。运行期间个别节点调用失败仍遵循原项目的规则/节选降级，需检查日志和实际回答质量。
+6. 默认不对公网开放 Ollama；复用已有本地服务时不会关闭它。仅当启动器自己启动 Ollama 时，退出启动器会清理该子进程。
+7. 当前测试覆盖原生 API 请求格式、用量解析、未安装模型与错误响应等模拟情况，以及原有离线路径回归。Windows Ollama 安装、真实权重下载、真实生成质量需在用户电脑验证，不能视为已验证通过。
+
+手动配置应用时，可设置 `LLM_BACKEND=ollama`、`OLLAMA_BASE_URL=http://127.0.0.1:11434`、`OLLAMA_MODEL=qwen2.5:3b`，然后运行 Uvicorn。默认 `LLM_BACKEND=auto` 保留原 DeepSeek/离线选择逻辑。
+
 ## Render（备选）
 
 本仓库保留 JEen-wang/Adaptive-rag 原始实现与 MIT 许可证，增加聊天弹窗和独立部署配置。首版验证网页、检索、API 和 SSE 的运行链路，不宣称真实模型效果。
