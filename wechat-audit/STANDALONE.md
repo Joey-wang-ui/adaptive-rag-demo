@@ -5,7 +5,7 @@
 
 ## 使用
 
-1. 下载经过成功构建的 `JiahuiShipmentAudit-Windows-x64` Actions artifact，解压外层下载包和内层软件 ZIP，完整保留 `JiahuiShipmentAudit` 文件夹。双击其中 EXE。不能只复制 EXE，`_internal` 包含运行环境和本地 OCR 模型。仅支持 Windows x64。
+1. 优先下载 `JiahuiShipmentAudit-Setup-Windows-x64` 安装包 artifact，解压后双击其中 `JiahuiShipmentAudit-Setup-Windows-x64.exe`，按向导安装到当前用户目录，无需管理员权限。也可下载经过成功构建的 `JiahuiShipmentAudit-Windows-x64` Actions artifact，解压外层下载包和内层软件 ZIP，完整保留 `JiahuiShipmentAudit` 文件夹。双击其中 EXE。不能只复制 EXE，`_internal` 包含运行环境和本地 OCR 模型。仅支持 Windows x64。
 2. 默认 Base URL `https://api.deepseek.com`，模型 `deepseek-chat`。在遮挡的 Key 栏自行填写密钥，勿向他人发送密钥。可设置 OpenAI 兼容 HTTPS 服务及对应模型，Base URL 可含 `/v1`。兼容服务须支持聊天接口和 JSON 输出；本机服务可使用 HTTP。更换地址会清空当前 Key，防止发送到另一服务。
 3. 粘贴一份单据文字，和/或上传同一单据的 1～4 张清晰图片，然后点击“添加为一份材料”。订单、出货单分别添加；同一单据的补充文字与图片可放同一份。无需固定模板、标签或指令。可选人工指定单据类型，无法确定则保持自动判断并人工核对。最多 8 份，每份文字与 OCR 合计不超过 20000 字；单张图片不超过 12 MiB / 3200 万像素，支持 PNG/JPG/WEBP/BMP。暂不直接支持 PDF、Excel。
 4. 点击“开始审核”。尚未添加的编辑区内容会自动添加为最后一份材料。上传、粘贴和打开软件均不会调用模型。图片先本机 OCR，文字（含 OCR 文字）再发送到所配置 API。每份材料一般一次字段提取请求；多份会多次调用并计费。
@@ -24,7 +24,7 @@
 
 ## 构建与验证边界
 
-GitHub Actions 工作流：`.github/workflows/windows-standalone-audit.yml`，可在 Actions → **Build Windows standalone shipment audit** → Run workflow 启动。流水线仅安装独立依赖，运行模拟接口/核算测试，使用 PyInstaller 构建，再运行打包程序 `--self-test` 验证 Tk、真实本机 OCR 夹具、DPAPI 和不导入微信模块。全部通过才上传 ZIP、SHA256 和包内 `packaged-self-test.json`。Artifact 保留 30 天，下载通常需登录有仓库读取权限的 GitHub 账号。校验：`Get-FileHash .\JiahuiShipmentAudit-Windows-x64.zip -Algorithm SHA256`，与 `SHA256SUMS.txt` 比较。
+GitHub Actions 工作流：`.github/workflows/windows-standalone-audit.yml`，可在 Actions → **Build Windows standalone shipment audit** → Run workflow 启动。流水线仅安装独立依赖，运行模拟接口/核算测试，使用 PyInstaller 构建，再运行打包程序 `--self-test` 验证 Tk、真实本机 OCR 夹具、DPAPI 和不导入微信模块。之后还使用 Inno Setup 构建安装器，静默安装、运行已安装程序自检并卸载；全部通过才上传安装器、ZIP、SHA256 和包内 `packaged-self-test.json`。Artifact 保留 30 天，下载通常需登录有仓库读取权限的 GitHub 账号。校验：`Get-FileHash .\JiahuiShipmentAudit-Windows-x64.zip -Algorithm SHA256`，与 `SHA256SUMS.txt` 比较。
 
 开发测试：Python 3.12，安装 `standalone-build-requirements.txt`，仓库根目录运行：
 

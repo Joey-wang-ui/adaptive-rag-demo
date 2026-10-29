@@ -46,17 +46,47 @@ jobs:
           Copy-Item $env:JIAHUI_STANDALONE_TEST_REPORT dist\JiahuiShipmentAudit\packaged-self-test.json
           $report = Get-Content $env:JIAHUI_STANDALONE_TEST_REPORT -Raw | ConvertFrom-Json
           if (!$report.ok) { throw 'Packaged self-test did not pass' }
+      - name: Build and verify per-user Windows installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw 'Inno Setup compiler is unavailable on this runner' }
+          & $iscc wechat-audit/standalone-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          $installDir = "$env:RUNNER_TEMP\JiahuiInstalled"
+          $p = Start-Process dist\JiahuiShipmentAudit-Setup-Windows-x64.exe -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installDir`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Silent installation failed' }
+          $env:JIAHUI_STANDALONE_TEST_REPORT = "$env:RUNNER_TEMP\installed-self-test.json"
+          $p = Start-Process "$installDir\JiahuiShipmentAudit.exe" -ArgumentList '--self-test' -PassThru
+          if (!$p.WaitForExit(120000)) { $p.Kill(); throw 'Installed app self-test timed out' }
+          if ($p.ExitCode -ne 0) { throw 'Installed app self-test failed' }
+          $report = Get-Content $env:JIAHUI_STANDALONE_TEST_REPORT -Raw | ConvertFrom-Json
+          if (!$report.ok) { throw 'Installed app did not pass self-test' }
+          Copy-Item $env:JIAHUI_STANDALONE_TEST_REPORT dist\installed-self-test.json
+          $p = Start-Process "$installDir\unins000.exe" -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Uninstall check failed' }
       - name: Zip and checksum
         shell: pwsh
         run: |
           Compress-Archive -Path dist\JiahuiShipmentAudit -DestinationPath dist\JiahuiShipmentAudit-Windows-x64.zip
           $hash = (Get-FileHash dist\JiahuiShipmentAudit-Windows-x64.zip -Algorithm SHA256).Hash
           "$hash  JiahuiShipmentAudit-Windows-x64.zip" | Set-Content dist\SHA256SUMS.txt
+          $setupHash = (Get-FileHash dist\JiahuiShipmentAudit-Setup-Windows-x64.exe -Algorithm SHA256).Hash
+          "$setupHash  JiahuiShipmentAudit-Setup-Windows-x64.exe" | Add-Content dist\SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: JiahuiShipmentAudit-Windows-x64
           path: |
             dist/JiahuiShipmentAudit-Windows-x64.zip
             dist/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JiahuiShipmentAudit-Setup-Windows-x64
+          path: |
+            dist/JiahuiShipmentAudit-Setup-Windows-x64.exe
+            dist/SHA256SUMS.txt
+            dist/installed-self-test.json
           retention-days: 30
           if-no-files-found: error
