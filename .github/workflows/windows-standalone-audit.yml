@@ -1,0 +1,54 @@
+name: Build Windows standalone shipment audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/standalone-audit]
+    paths:
+      - '.github/workflows/windows-standalone-audit.yml'
+      - 'wechat-audit/standalone*'
+      - 'wechat-audit/build_standalone.py'
+      - 'wechat-audit/STANDALONE.md'
+      - 'wechat-audit/shipment_bot/**'
+      - 'wechat-audit/tests/test_standalone*'
+permissions:
+  contents: read
+jobs:
+  windows-standalone:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install standalone dependencies only
+        run: python -m pip install -r wechat-audit/standalone-build-requirements.txt
+      - name: Test standalone workflow and existing arithmetic/extraction
+        run: python -m pytest -q wechat-audit/tests/test_standalone.py wechat-audit/tests/test_review.py wechat-audit/tests/test_auto_review.py wechat-audit/tests/test_text_materials.py
+      - name: Build independent executable
+        run: python wechat-audit/build_standalone.py
+      - name: Check packaged Tk OCR DPAPI and forbidden imports (no real API)
+        shell: pwsh
+        run: |
+          $env:JIAHUI_STANDALONE_TEST_REPORT = "$env:RUNNER_TEMP\standalone-self-test.json"
+          $p = Start-Process dist\JiahuiShipmentAudit\JiahuiShipmentAudit.exe -ArgumentList '--self-test' -PassThru
+          if (!$p.WaitForExit(120000)) { $p.Kill(); throw 'Packaged self-test timed out' }
+          if ($p.ExitCode -ne 0) { throw 'Packaged self-test failed' }
+          if (!(Test-Path $env:JIAHUI_STANDALONE_TEST_REPORT)) { throw 'Missing self-test report' }
+          Copy-Item $env:JIAHUI_STANDALONE_TEST_REPORT dist\JiahuiShipmentAudit\packaged-self-test.json
+          $report = Get-Content $env:JIAHUI_STANDALONE_TEST_REPORT -Raw | ConvertFrom-Json
+          if (!$report.ok) { throw 'Packaged self-test did not pass' }
+      - name: Zip and checksum
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\JiahuiShipmentAudit -DestinationPath dist\JiahuiShipmentAudit-Windows-x64.zip
+          $hash = (Get-FileHash dist\JiahuiShipmentAudit-Windows-x64.zip -Algorithm SHA256).Hash
+          "$hash  JiahuiShipmentAudit-Windows-x64.zip" | Set-Content dist\SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JiahuiShipmentAudit-Windows-x64
+          path: |
+            dist/JiahuiShipmentAudit-Windows-x64.zip
+            dist/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
