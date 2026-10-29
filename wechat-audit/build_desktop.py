@@ -43,6 +43,7 @@ def main():
         "uiautomation",
         "comtypes",
         "cv2",
+        "imageio_ffmpeg",
     ]:
         command.extend(["--collect-all", package])
     command.append(str(ROOT / "desktop.py"))

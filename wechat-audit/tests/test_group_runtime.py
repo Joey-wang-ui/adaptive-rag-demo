@@ -39,6 +39,7 @@ def runtime(tmp_path, monkeypatch):
         "wechatauto",
         SimpleNamespace(WeChatDB=Mock(return_value=db), MediaDownloader=Mock()),
     )
+    monkeypatch.setattr(group_runtime, "build_media", lambda factory, db: factory(db))
     monkeypatch.setitem(sys.modules, "wechatauto.db", SimpleNamespace(Listener=listener_factory))
     monkeypatch.setitem(sys.modules, "wechatauto.guia", SimpleNamespace(quick_send=send))
     monkeypatch.setattr(group_runtime, "Extractor", extract)

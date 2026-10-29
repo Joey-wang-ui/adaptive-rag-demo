@@ -15,12 +15,16 @@ def self_test():
     """Packaged runtime check. No account detection, API calls or message sending."""
     report = Path(os.environ["JIAHUI_SELF_TEST_REPORT"])
     try:
+        import subprocess
+        import tempfile
         import tkinter
 
-        import wechatauto  # noqa: F401
+        import imageio_ffmpeg
         from PIL import Image, ImageDraw, ImageFont
         from shipment_bot.extract import Extractor
+        from shipment_bot.image_transport import check_synthetic_decryption
         from shipment_bot.windows_safety import GlobalEscape
+        from wechatauto import MediaDownloader
 
         hotkey = GlobalEscape()
         try:
@@ -28,23 +32,60 @@ def self_test():
         finally:
             hotkey.close()
         extractor = Extractor("self-test-not-a-real-key")
-        sample = report.with_suffix(".png")
-        image = Image.new("RGB", (1000, 240), "white")
-        ImageDraw.Draw(image).text(
-            (30, 65), "ORDER TOTAL 120", fill="black", font=ImageFont.truetype("arial.ttf", 64)
-        )
-        image.save(sample)
-        try:
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            sample = directory / "sample.jpg"
+            image = Image.new("RGB", (1000, 240), "white")
+            ImageDraw.Draw(image).text(
+                (30, 65), "ORDER TOTAL 120", fill="black", font=ImageFont.truetype("arial.ttf", 64)
+            )
+            image.save(sample, quality=95)
+            media, decoded = check_synthetic_decryption(
+                MediaDownloader, sample.read_bytes(), directory
+            )
+            # Verify the bundled decoder, not an incidental system ffmpeg installation.
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+            media._ffmpeg_exe = lambda: ffmpeg
+            hevc = directory / "sample.hevc"
+            subprocess.run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    str(sample),
+                    "-frames:v",
+                    "1",
+                    "-c:v",
+                    "libx265",
+                    "-threads",
+                    "1",
+                    "-x265-params",
+                    "pools=none:frame-threads=1:log-level=error",
+                    "-f",
+                    "hevc",
+                    str(hevc),
+                ],
+                capture_output=True,
+                check=True,
+                timeout=30,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            converted = media._wxgf_to_jpg(b"wxgf" + hevc.read_bytes())
+            if not converted:
+                raise RuntimeError("Bundled WXGF/HEVC decoder did not return a JPEG")
+            sample.write_bytes(converted)
             recognized, _ = extractor.read_image(sample)
             if "120" not in recognized or "TOTAL" not in recognized.upper():
-                raise RuntimeError("Bundled OCR did not recognize the synthetic order image")
-        finally:
-            sample.unlink(missing_ok=True)
+                raise RuntimeError("Bundled OCR did not recognize the decoded synthetic image")
         report.write_text(
             json.dumps(
                 {
                     "ocr_loaded": True,
                     "ocr_image_recognized": True,
+                    "synthetic_v2_decrypted": True,
+                    "wxgf_hevc_decoded": True,
                     "tk_version": tkinter.TkVersion,
                     "transport_imported": True,
                     "global_esc_registered_and_released": True,
@@ -103,7 +144,7 @@ def main():
         return
 
     root = tk.Tk()
-    root.title("嘉惠 · 微信群审单助手 v0.6 · 图片反馈与自动核算")
+    root.title("嘉惠 · 微信群审单助手 v0.7 · 图片解密修复")
     root.geometry("900x790")
     root.minsize(800, 730)
     root.configure(bg="#f4f7fb")

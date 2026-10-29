@@ -242,3 +242,10 @@ def test_missing_line_amount_never_invents_pricing_units_or_conversion(price_uni
     assert "无法完整核对总计" in report
     assert "与填写的合计一致" not in report
     assert "计算为100.00" not in report
+
+
+def test_image_failure_is_above_text_arithmetic_and_never_claims_image_comparison():
+    report = summarize([Recognized(document=document(), source_type="text")], ["第1张图片读取超时"])
+    assert report.index("本批审核未完成") < report.index("第1份文字")
+    assert "不能据此判断图文一致" in report
+    assert "【两单比对】" not in report

@@ -38,9 +38,22 @@ class ImageReader:
                 ).start()
             _, done, result = self.pending
         if not done.wait(self.timeout):
+            stage = getattr(self.media, "audit_stage", "")
+            if not isinstance(stage, str):
+                stage = ""
+            phases = {
+                "定位本条图片消息",
+                "定位本张图片缓存文件",
+                "转换微信图片格式",
+                "读取当前图片加密头",
+                "解密当前图片",
+                "查找当前图片解密信息",
+                "验证当前图片解密信息",
+            }
+            detail = f"（阶段：{stage}）" if stage in phases else ""
             raise ExtractionError(
-                "读取微信图片超时（可能正在等待图片解密信息），本次未完成识别。"
-                "请在电脑微信打开本张图片、查看原图，稍后重新 @审核；也可按 Esc 停止后手动启动。"
+                f"读取微信图片超时{detail}，本次未完成识别。"
+                "请在电脑微信打开本张图片、等大图完整显示后重新 @审核。若仍超时，请提供软件运行日志和微信版本号；不要提供密钥。"
             )
         with self.lock:
             if self.pending and self.pending[2] is result:

@@ -11,6 +11,7 @@ from pathlib import Path
 from shipment_bot.extract import Extractor
 from shipment_bot.group_audit import REPLY_PREFIX, GroupAudit, resolve_group
 from shipment_bot.image_read import ImageReader
+from shipment_bot.image_transport import build_media
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.environ.get("JIAHUI_AUDIT_DATA_DIR", ROOT / "data/group-audit"))
@@ -84,7 +85,7 @@ def main():
     )
     print("正在加载本地 OCR；不下载本地语言模型。", flush=True)
     extractor.prepare_ocr()
-    media = MediaDownloader(db)
+    media = build_media(MediaDownloader, db)
     image_dir = DATA / "images"
     image_dir.mkdir(exist_ok=True)
 

@@ -1,3 +1,6 @@
 -r requirements.txt
 wechatauto-replica==1.2.8.1
 pypinyin==0.55.0
+
+# Decode modern WeChat WXGF/HEVC images locally; includes a pinned Windows binary.
+imageio-ffmpeg==0.6.0

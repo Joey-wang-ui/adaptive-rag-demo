@@ -97,6 +97,11 @@ def self_check(doc, require_customer=False, require_specification=False):
 
 def summarize(items, errors=(), require_customer=False, require_specification=False):
     output = ["【单据自动自查】"]
+    if errors:
+        output.append(
+            "【本批审核未完成】有材料未识别成功；以下仅是已识别部分的自查，不能据此判断图文一致。"
+        )
+        output.extend("- " + error for error in errors)
     for item in items:
         index = item.image_index
         label = {"order": "订单", "delivery": "出货单", "unknown": "单据（未注明订单/出货单）"}[
@@ -114,7 +119,6 @@ def summarize(items, errors=(), require_customer=False, require_specification=Fa
             output.append(f"另有{len(issues)-20}项待核实，请先处理以上问题。")
         if not issues:
             output.append("已识别字段的行金额及合计未发现计算差异。")
-    output.extend("- " + error for error in errors)
     orders = [x.document for x in items if x.kind == "order"]
     deliveries = [x.document for x in items if x.kind == "delivery"]
     if len(items) == 2 and not errors and len(orders) == len(deliveries) == 1:
