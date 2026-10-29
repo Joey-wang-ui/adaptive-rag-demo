@@ -32,6 +32,7 @@ def runtime(tmp_path, monkeypatch):
     db.search_contact.return_value = [{"username": "g@chatroom", "nick_name": "测试群"}]
     db.get_messages.return_value = [{"sort_seq": 50}]
     send, extract = Mock(return_value={"status": "成功"}), Mock()
+    extract.return_value.interpret_request = None
     listener = Mock()
     listener_factory = Mock(return_value=listener)
     monkeypatch.setitem(

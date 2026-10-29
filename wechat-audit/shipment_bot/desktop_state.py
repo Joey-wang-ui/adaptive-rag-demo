@@ -55,6 +55,7 @@ def save_settings(
     if audit is not None:
         config["audit"] = {
             "instructions": str(audit.get("instructions", ""))[:3000],
+            "skill": str(audit.get("skill", config.get("audit", {}).get("skill", "")))[:20000],
             "require_customer": bool(audit.get("require_customer", False)),
             "require_specification": bool(audit.get("require_specification", False)),
         }

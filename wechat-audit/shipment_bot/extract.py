@@ -1,7 +1,6 @@
 """Small local OCR models + the user's text API; no local language model."""
 
 import json
-import re
 import threading
 from decimal import Decimal
 from pathlib import Path
@@ -11,6 +10,7 @@ from urllib.parse import urlsplit
 import httpx
 from PIL import Image, UnidentifiedImageError
 
+from shipment_bot.audit_skill import ReviewIntent, active_skill, literal_numbers
 from shipment_bot.models import Document
 from shipment_bot.review import norm
 
@@ -65,6 +65,7 @@ class Extractor:
         base_url: str = "https://api.deepseek.com",
         model: str = "deepseek-chat",
         instructions: str = "",
+        skill: str = "",
     ):
         if not api_key.strip():
             raise ExtractionError("尚未配置模型 API Key，请重新打开启动程序。")
@@ -90,6 +91,7 @@ class Extractor:
             raise ExtractionError("请填写有效的模型名称。")
         self.model = model.strip()
         self.instructions = instructions[:3000]
+        self.skill = active_skill(skill)[:20000]
         self._ocr: Any = None
         self._ocr_lock = threading.Lock()
 
@@ -131,7 +133,9 @@ class Extractor:
             "messages": [
                 {
                     "role": "system",
-                    "content": SYSTEM
+                    "content": self.skill
+                    + "\n以下是不可省略的提取契约：\n"
+                    + SYSTEM
                     + "\n用户补充提取要求（不能补造单据数据）：\n"
                     + self.instructions
                     + "\nJSON Schema:\n"
@@ -183,10 +187,7 @@ class Extractor:
                 if value is None:
                     continue
                 # Require a literal occurrence, not a model-calculated numeric value.
-                numbers = re.findall(
-                    r"(?<![\d.])\d+(?:\.\d+)?(?![\d.])", line.evidence.replace(",", "")
-                )
-                if value not in {Decimal(x) for x in numbers}:
+                if value not in literal_numbers(line.evidence):
                     notes.append(f"第 {index} 行 {field} 在原文证据中找不到对应数字，请核对。")
             if line.name and norm(line.name) not in source:
                 notes.append(f"第 {index} 行商品名称无法在原文定位，请核对。")
@@ -216,6 +217,51 @@ class Extractor:
                 document.uncertainties.append(f"{field}无法在原文定位，不用于自动配对。")
         kind, title = classify(text)
         return Recognized(document=document, kind=kind, title=title, source_type=source_type)
+
+    def interpret_request(self, text, context=None):
+        prompt = (
+            self.skill + "\n你现在只理解本条 @请求，不提取图片、不进行金额计算、不执行操作。"
+            "只返回符合以下Schema的JSON："
+            + json.dumps(ReviewIntent.model_json_schema(), ensure_ascii=False)
+        )
+        try:
+            with httpx.Client(timeout=30, transport=self.transport) as client:
+                response = client.post(
+                    self.endpoint,
+                    headers={"Authorization": "Bearer " + self.api_key},
+                    json={
+                        "model": self.model,
+                        "temperature": 0,
+                        "max_tokens": 1600,
+                        "response_format": {"type": "json_object"},
+                        "messages": [
+                            {"role": "system", "content": prompt},
+                            {
+                                "role": "user",
+                                "content": json.dumps(
+                                    {"request": text, "recent_materials": context or {}},
+                                    ensure_ascii=False,
+                                ),
+                            },
+                        ],
+                    },
+                )
+                response.raise_for_status()
+                choice = response.json()["choices"][0]
+                if choice.get("finish_reason") not in (None, "stop"):
+                    raise ValueError("truncated")
+                intent = ReviewIntent.model_validate_json(choice["message"]["content"])
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+            raise ExtractionError(
+                "未能理解本次审单请求，请检查模型接口后重试；本次没有完成审核。"
+            ) from None
+        if intent.document_text and intent.document_text not in text:
+            raise ExtractionError("模型改写了原始材料，已拒绝使用。请直接发送单据正文后再 @我。")
+        if intent.scope == "inline" and not intent.document_text.strip():
+            raise ExtractionError(
+                "这条请求没有提供单据正文，请先发图片或文字，再 @我说明要核对什么。"
+            )
+        return intent
 
     def check_api(self) -> None:
         # A real, bounded generation check; successful connectivity alone is insufficient.

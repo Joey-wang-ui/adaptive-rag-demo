@@ -46,6 +46,9 @@ def main():
         "imageio_ffmpeg",
     ]:
         command.extend(["--collect-all", package])
+    command.extend(
+        ["--add-data", str(ROOT / "shipment_bot/skills") + os.pathsep + "shipment_bot/skills"]
+    )
     command.append(str(ROOT / "desktop.py"))
     subprocess.run(command, cwd=ROOT, check=True)
     destination = REPO / "dist/JiahuiGroupAudit"

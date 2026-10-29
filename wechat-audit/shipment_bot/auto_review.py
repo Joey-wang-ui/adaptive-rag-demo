@@ -95,7 +95,9 @@ def self_check(doc, require_customer=False, require_specification=False):
     return _check_document(doc, require_customer, require_specification)[0]
 
 
-def summarize(items, errors=(), require_customer=False, require_specification=False):
+def summarize(
+    items, errors=(), require_customer=False, require_specification=False, compare_requested=False
+):
     output = ["【单据自动自查】"]
     if errors:
         output.append(
@@ -121,7 +123,30 @@ def summarize(items, errors=(), require_customer=False, require_specification=Fa
             output.append("已识别字段的行金额及合计未发现计算差异。")
     orders = [x.document for x in items if x.kind == "order"]
     deliveries = [x.document for x in items if x.kind == "delivery"]
-    if len(items) == 2 and not errors and len(orders) == len(deliveries) == 1:
+    captions = [x.document for x in items if x.source_type == "text"]
+    images = [x.document for x in items if x.source_type == "image"]
+    if compare_requested:
+        if errors or len(items) != 2 or len(captions) != 1 or len(images) != 1:
+            output.append(
+                "【图文比对未完成】请提供一张可读取的图片和本次要核对的文字；不能据部分材料判断一致。"
+            )
+        else:
+            findings = compare_caption(captions[0], images[0])
+            headline = (
+                "发现图文差异"
+                if any("不一致" in finding for finding in findings)
+                else "图文尚有待确认项"
+                if findings
+                else "已提供字段与图片一致"
+            )
+            output.insert(1, "【" + headline + "】")
+            output.append("【按本次请求核对图文】仅核对文字明确提供的字段，不代替业务归属确认。")
+            output.extend("- " + finding for finding in findings[:20])
+            if not findings:
+                output.append(
+                    "文字中已提供且可识别的字段与本张图片一致；未填写的字段不在本次比对范围。"
+                )
+    elif len(items) == 2 and not errors and len(orders) == len(deliveries) == 1:
         order, delivery = orders[0], deliveries[0]
         expected_id = order.reference_order_id or order.document_number
         if (
@@ -149,3 +174,55 @@ def summarize(items, errors=(), require_customer=False, require_specification=Fa
         "自查不验证成交价是否正确、是否错发漏发；本结果不代表批准发货，请核对原图和实物。"
     )
     return "\n".join(output)
+
+
+def compare_caption(caption, image):
+    """Compare only caption-provided fields; no order ID or role invention."""
+    findings = []
+    for field, label in [("customer", "客户"), ("total", "合计")]:
+        expected, actual = getattr(caption, field), getattr(image, field)
+        if expected is None:
+            continue
+        if actual is None:
+            findings.append(f"图片{label}未识别，无法确认文字中的{label}。")
+        elif norm(expected) != norm(actual) if field == "customer" else expected != actual:
+            findings.append(f"{label}不一致：文字为{expected}，图片为{actual}。")
+    matched = set()
+    for row in caption.lines:
+        candidates = [
+            (i, other)
+            for i, other in enumerate(image.lines)
+            if row.name
+            and norm(row.name) == norm(other.name)
+            and (not row.specification or norm(row.specification) == norm(other.specification))
+        ]
+        if len(candidates) != 1 or candidates[0][0] in matched:
+            findings.append(
+                f"商品「{row.name or '名称未识别'}」在图片中未找到唯一对应行，请核对商品名称和规格。"
+            )
+            continue
+        index, other = candidates[0]
+        matched.add(index)
+        for field, label in [
+            ("quantity", "数量"),
+            ("unit", "数量单位"),
+            ("unit_price", "单价"),
+            ("price_unit", "计价单位"),
+            ("amount", "行金额"),
+        ]:
+            expected, actual = getattr(row, field), getattr(other, field)
+            if expected is None:
+                continue
+            if actual is None:
+                findings.append(f"「{row.name}」图片{label}未识别，无法核对。")
+            elif (
+                unit(expected) != unit(actual)
+                if field in {"unit", "price_unit"}
+                else expected != actual
+            ):
+                findings.append(f"「{row.name}」{label}不一致：文字为{expected}，图片为{actual}。")
+    if len(matched) < len(image.lines):
+        findings.append("图片还有未能与文字唯一对应的商品行，本次不能确认整张单据一致。")
+    findings.extend("图片待确认：" + note for note in image.uncertainties)
+    findings.extend("文字待确认：" + note for note in caption.uncertainties)
+    return list(dict.fromkeys(findings))

@@ -165,6 +165,50 @@ class GroupAudit:
                 return self.audit(code)
             except ExtractionError as error:
                 return f"{code} 待确认：{error}\n本次未完成核对，请人工核实后发货。"
+        addressed = re.match(rf"^@{re.escape(self.nickname)}(?:\s|[，,:：])", text)
+        interpreter = getattr(self.extract, "interpret_request", None)
+        if kind == "text" and addressed and callable(interpreter):
+            # Preserve completed-batch dedup before invoking a model again.
+            with self.connect() as db:
+                completed = db.execute(
+                    "SELECT reviewed FROM auto_batches WHERE sender=?", (sender,)
+                ).fetchone()
+            tail = text[addressed.end() :].strip()
+            if (
+                completed
+                and completed[0]
+                and "\n" not in tail
+                and not looks_like_document(tail)
+                and not re.search("客户|商品|数量|单价|合计", tail)
+            ):
+                return None
+            try:
+                with self.connect() as db:
+                    materials = [
+                        json.loads(row[0])
+                        for row in db.execute(
+                            "SELECT raw FROM auto_photos WHERE sender=?", (sender,)
+                        )
+                    ]
+                context = {
+                    "text_count": sum("_audit_text" in value for value in materials),
+                    "image_count": sum("_audit_text" not in value for value in materials),
+                }
+                intent = interpreter(tail, context=context)
+                if intent.action == "ignore":
+                    return None
+                if intent.action == "clarify":
+                    question = (
+                        intent.question or "你希望核对金额、商品数量，还是文字与图片是否一致？"
+                    )
+                    if re.search(r"密钥|API.?key|转账|批准|付款", question, re.I):
+                        question = "请说明这次要核对哪份材料，以及要核对的金额或数量。"
+                    return question
+                if intent.document_text:
+                    self.collect_material(sender, identity, {"_audit_text": intent.document_text})
+                return self.auto_audit(sender, compare_requested=intent.action == "compare")
+            except ExtractionError as error:
+                return f"本次审核未完成：{error}"
         if kind == "text" and automatic_request(text, self.nickname):
             return self.auto_audit(sender)
         inline = inline_request(text, self.nickname) if kind == "text" else None
@@ -230,7 +274,7 @@ class GroupAudit:
             )
             db.execute("UPDATE auto_batches SET at=? WHERE sender=?", (self.clock(), sender))
 
-    def auto_audit(self, sender):
+    def auto_audit(self, sender, compare_requested=False):
         with self.connect() as db:
             batches = db.execute(
                 "SELECT sender,batch,overflow,reviewed FROM auto_batches WHERE at>=?",
@@ -287,6 +331,7 @@ class GroupAudit:
             errors,
             bool(self.audit_options.get("require_customer", False)),
             bool(self.audit_options.get("require_specification", False)),
+            compare_requested=compare_requested,
         )
         if not errors:
             with self.connect() as db:

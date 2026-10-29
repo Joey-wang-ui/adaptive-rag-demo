@@ -82,6 +82,7 @@ def main():
         base_url=llm.get("base_url", "https://api.deepseek.com"),
         model=llm.get("model", "deepseek-chat"),
         instructions=audit_options.get("instructions", ""),
+        skill=audit_options.get("skill", ""),
     )
     print("正在加载本地 OCR；不下载本地语言模型。", flush=True)
     extractor.prepare_ocr()

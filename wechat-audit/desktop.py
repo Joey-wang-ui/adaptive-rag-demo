@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from shipment_bot.audit_skill import builtin_skill
 from shipment_bot.desktop_state import Controller, data_directory, save_settings
 
 ROOT = Path(__file__).resolve().parent
@@ -26,6 +27,8 @@ def self_test():
         from shipment_bot.windows_safety import GlobalEscape
         from wechatauto import MediaDownloader
 
+        if len(builtin_skill()) < 300:
+            raise RuntimeError("Bundled audit skill is missing or incomplete")
         hotkey = GlobalEscape()
         try:
             hotkey.start()
@@ -83,6 +86,7 @@ def self_test():
             json.dumps(
                 {
                     "ocr_loaded": True,
+                    "audit_skill_loaded": True,
                     "ocr_image_recognized": True,
                     "synthetic_v2_decrypted": True,
                     "wxgf_hevc_decoded": True,
@@ -144,7 +148,7 @@ def main():
         return
 
     root = tk.Tk()
-    root.title("嘉惠 · 微信群审单助手 v0.7 · 图片解密修复")
+    root.title("嘉惠 · 微信群审单助手 v0.8 · 自然审单技能")
     root.geometry("900x790")
     root.minsize(800, 730)
     root.configure(bg="#f4f7fb")
@@ -175,6 +179,7 @@ def main():
     api_url = tk.StringVar(value=config.get("llm", {}).get("base_url", "https://api.deepseek.com"))
     model_name = tk.StringVar(value=config.get("llm", {}).get("model", "deepseek-chat"))
     instructions = config.get("audit", {}).get("instructions", "")
+    skill_text = config.get("audit", {}).get("skill", "")
     require_customer = tk.BooleanVar(value=config.get("audit", {}).get("require_customer", False))
     require_specification = tk.BooleanVar(
         value=config.get("audit", {}).get("require_specification", False)
@@ -238,16 +243,18 @@ def main():
             llm={"base_url": api_url.get(), "model": model_name.get()},
             audit={
                 "instructions": instructions,
+                "skill": skill_text,
                 "require_customer": require_customer.get(),
                 "require_specification": require_specification.get(),
             },
         )
 
     def settings():
-        nonlocal instructions
+        nonlocal instructions, skill_text
         dialog = tk.Toplevel(root)
         dialog.title("模型与审核设置")
-        dialog.geometry("700x550")
+        dialog.geometry("760x680")
+        skill_var = tk.StringVar(value=skill_text or builtin_skill())
         dialog.transient(root)
         dialog.grab_set()
         panel = ttk.Frame(dialog, padding=24)
@@ -279,8 +286,49 @@ def main():
             panel, text="金额计算、单位不清提示和不自动批准发货始终保留。", foreground="#547080"
         ).pack(anchor="w", pady=8)
 
+        def edit_skill():
+            window = tk.Toplevel(dialog)
+            window.title("完整审单技能")
+            window.geometry("850x720")
+            window.transient(dialog)
+            window.grab_set()
+            ttk.Label(
+                window,
+                text="正常说法即可审单；规则可修改。金额计算、原文证据与Esc急停由程序执行。",
+                wraplength=800,
+            ).pack(padx=16, pady=12)
+            content = scrolledtext.ScrolledText(
+                window, wrap="word", font=("Microsoft YaHei UI", 10)
+            )
+            content.insert("1.0", skill_var.get())
+            content.pack(fill="both", expand=True, padx=16)
+
+            def accept():
+                value = content.get("1.0", "end").strip()
+                if not value or len(value) > 20000:
+                    messagebox.showerror(
+                        "无法保存", "技能内容不能为空，最多20000字。", parent=window
+                    )
+                    return
+                skill_var.set(value)
+                window.destroy()
+
+            buttons = ttk.Frame(window, padding=12)
+            buttons.pack(fill="x")
+
+            def restore():
+                content.delete("1.0", "end")
+                content.insert("1.0", builtin_skill())
+
+            ttk.Button(buttons, text="恢复内置技能", command=restore).pack(side="left")
+            ttk.Button(buttons, text="使用此技能", command=accept).pack(side="right")
+
+        ttk.Button(panel, text="查看 / 编辑完整审单技能", command=edit_skill).pack(
+            anchor="w", pady=8
+        )
+
         def apply():
-            nonlocal instructions
+            nonlocal instructions, skill_text
             old = (
                 api_url.get(),
                 model_name.get(),
@@ -288,7 +336,9 @@ def main():
                 require_customer.get(),
                 require_specification.get(),
             )
+            old_skill = skill_text
             old_key, old_remember = key.get(), remember.get()
+            skill_text = skill_var.get()
             api_url.set(url_var.get())
             model_name.set(model_var.get())
             instructions = editor.get("1.0", "end").strip()
@@ -304,6 +354,7 @@ def main():
                 api_url.set(old[0])
                 model_name.set(old[1])
                 instructions = old[2]
+                skill_text = old_skill
                 require_customer.set(old[3])
                 require_specification.set(old[4])
                 key.set(old_key)
