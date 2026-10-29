@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from shipment_bot.mention_gate import parse_mention
+
 
 @dataclass
 class Node:
@@ -337,6 +339,7 @@ def main() -> None:
         raise RuntimeError(
             "请输入实际测试群名称，不要填应用标题“微信”。测试群也请使用可区分的名称。"
         )
+    nickname = input("输入群里 @ 时显示的助手昵称（默认：审单助手）：").strip() or "审单助手"
     print("请在 8 秒内切到电脑版微信，打开这个测试群；保持窗口展开并将消息滚到底部。", flush=True)
     for seconds in range(8, 0, -1):
         print(f"{seconds}...", flush=True)
@@ -354,9 +357,12 @@ def main() -> None:
             selected, rows = None, []
     report = redacted_report(nodes, group, client_version, selected, rows)
     report["new_rows_observed"] = 0
-    test_phrase = "群监听测试-" + secrets.token_hex(3).upper()
-    report["test_phrase"] = test_phrase
+    test_code = secrets.token_hex(3).upper()
+    test_phrase = "@" + nickname + " 测试 " + test_code
+    report["test_code"] = test_code
     report["test_phrase_seen_in_group_rows"] = False
+    report["mention_gate"] = "visible_text_only"
+    report["mention_candidates_observed"] = 0
     report_path = Path(__file__).resolve().parents[2] / "logs/wechat-group-compat.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -367,10 +373,10 @@ def main() -> None:
         print("把检测窗口输出或上面的脱敏 JSON 报告提供给开发者，继续适配。")
         return
     print(f"找到指定群的消息列表，目前可读取 {len(rows)} 条带运行时标识的界面记录。")
-    print("以下仅在本机显示样本，不写入报告：")
-    for _, text in rows[-3:]:
-        print("[本机样本] " + text[:180])
-    print("开始观察新出现的界面记录；请用手机手动往这个测试群发送：" + test_phrase)
+    print("普通聊天记录不显示、不调用 API。仅在本机显示匹配的 @ 指令候选。")
+    print("请让一位测试群成员手动 @ 对应微信账号，再发送：测试 " + test_code)
+    print("本次期望看到的可见文字：" + test_phrase)
+    print("后续审单指令约定：@" + nickname + " 审核 A001")
     print("这里只验证可见文字，不保证完整历史、不提取原图，也未连接审单。按 Ctrl+C 停止。")
     seen = Seen()
     for identity, text in rows:
@@ -412,14 +418,25 @@ def main() -> None:
         changed = False
         for identity, text in current_rows:
             if seen.fresh(identity, text):
-                print("[新界面记录，仅本机] " + text[:1500], flush=True)
                 report["new_rows_observed"] += 1
-                if test_phrase in text:
-                    report["test_phrase_seen_in_group_rows"] = True
+                command = parse_mention(text, nickname)
+                if command:
+                    report["mention_candidates_observed"] += 1
                     print(
-                        "[文字验证通过] 已从指定群消息区域读到本次测试原文。图片原图尚未验证。",
+                        f"[@ 指令候选，仅本机] {command.action} {command.reference}；未调用 API、未审单、未发群消息。",
                         flush=True,
                     )
+                normalized = unicodedata.normalize("NFKC", text)
+                if (
+                    test_code in normalized
+                    and "@" + unicodedata.normalize("NFKC", nickname) in normalized
+                ):
+                    report["test_phrase_seen_in_group_rows"] = True
+                    print(
+                        "[文字验证通过] 已从指定群消息区域读到本次测试文字；真实 @ 元数据和图片原图尚未验证。",
+                        flush=True,
+                    )
+                    print("[测试行原文，仅本机] " + repr(text[:800]), flush=True)
                 changed = True
         if changed:
             report_path.write_text(
