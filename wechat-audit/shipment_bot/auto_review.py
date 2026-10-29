@@ -16,6 +16,7 @@ class Recognized(BaseModel):
     kind: Literal["order", "delivery", "unknown"] = "unknown"
     title: str = ""
     image_index: int = 1
+    source_type: Literal["image", "text"] = "image"
 
 
 def classify(text):
@@ -78,8 +79,9 @@ def summarize(items, errors=(), require_customer=False, require_specification=Fa
         index = item.image_index
         label = {"order": "订单", "delivery": "出货单", "unknown": "类型待确认的单据"}[item.kind]
         doc = item.document
+        position = f"第{index}张" if item.source_type == "image" else f"第{index}份文字"
         output.append(
-            f"第{index}张：{label}｜客户：{doc.customer or '未识别'}｜单号：{doc.document_number or doc.reference_order_id or '未识别'}"
+            f"{position}：{label}｜客户：{doc.customer or '未识别'}｜单号：{doc.document_number or doc.reference_order_id or '未识别'}"
         )
         issues = self_check(doc, require_customer, require_specification)
         output.extend("- " + issue for issue in issues[:20])

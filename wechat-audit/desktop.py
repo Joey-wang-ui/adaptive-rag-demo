@@ -78,7 +78,7 @@ def main():
         return
 
     root = tk.Tk()
-    root.title("嘉惠 · 微信群审单助手 v0.2 · 自动识单")
+    root.title("嘉惠 · 微信群审单助手 v0.3 · 图文审单")
     root.geometry("900x740")
     root.minsize(800, 680)
     root.configure(bg="#f4f7fb")
@@ -273,12 +273,12 @@ def main():
     )
     ttk.Label(
         body,
-        text="群内用法：发一张或多张清晰单据图片 → @审单bot 审核（不必填标签或编号）",
+        text="群内用法：发订单文字、单据图片，或图文混发 → @审单bot 审核（不必填标签或编号）",
         wraplength=820,
     ).pack(anchor="w")
     ttk.Label(
         body,
-        text="一次最多4张，默认取本人最近10分钟的一批图片；只有出货单也能自查。普通消息不回复。",
+        text="每批最多4份材料；默认取本人近期材料。也可首行 @审单bot 审核，换行粘贴文字。普通消息不回复。",
         foreground="#547080",
         wraplength=820,
     ).pack(anchor="w", pady=(4, 12))

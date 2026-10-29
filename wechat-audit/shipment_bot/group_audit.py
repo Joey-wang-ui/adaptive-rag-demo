@@ -36,6 +36,37 @@ def automatic_request(text, nickname):
     )
 
 
+def inline_request(text, nickname):
+    """Explicit @ review on first/last line may carry the document in the same message."""
+    lines = text.strip().splitlines()
+    if len(lines) >= 2:
+        if automatic_request(lines[0], nickname):
+            return "\n".join(lines[1:]).strip()
+        if automatic_request(lines[-1], nickname):
+            return "\n".join(lines[:-1]).strip()
+    return None
+
+
+def looks_like_document(text):
+    """Local candidate filter only; never calls a model for ordinary conversation."""
+    text = unicodedata.normalize("NFKC", text)
+    if not text.strip() or len(text) > 20000:
+        return False
+    number = r"[0-9一二三四五六七八九十百千万两]"
+    return bool(
+        re.search(
+            number
+            + r"[\d.一二三四五六七八九十百千万两]*\s*(?:箱|袋|件|盒|包|瓶|公斤|千克|kg|斤|吨|元)",
+            text,
+            re.I,
+        )
+        or (
+            re.search(r"客户|订单|订货|出货|发货|合计|单价|金额|总计", text)
+            and re.search(number, text)
+        )
+    )
+
+
 def resolve_group(db, name):
     hits = {
         row["username"]
@@ -120,8 +151,14 @@ class GroupAudit:
                 return f"{code} 待确认：{error}\n本次未完成核对，请人工核实后发货。"
         if kind == "text" and automatic_request(text, self.nickname):
             return self.auto_audit(sender)
+        inline = inline_request(text, self.nickname) if kind == "text" else None
+        if inline:
+            if len(inline) > 20000:
+                return "本条文字超过20000字，请按订单分开发送后审核。"
+            self.collect_material(sender, identity, {"_audit_text": inline})
+            return self.auto_audit(sender)
         if kind == "image":
-            self.collect_photo(sender, identity, msg)
+            self.collect_material(sender, identity, msg)
         label = re.fullmatch(rf"(订单|出货单)\s+({CASE})(?:\n([\s\S]+))?", text)
         if kind == "text" and label:
             role = "order" if label[1] == "订单" else "delivery"
@@ -136,7 +173,11 @@ class GroupAudit:
                         "INSERT INTO pending VALUES (?,?,?,?)",
                         (sender, label[2], role, self.clock()),
                     )
+            if label[3]:
+                self.collect_material(sender, identity, {"_audit_text": text})
             return None
+        if kind == "text" and "@" not in text and looks_like_document(text):
+            self.collect_material(sender, identity, {"_audit_text": text})
         with self.connect() as db:
             pending = db.execute(
                 "SELECT code,role,at FROM pending WHERE sender=?", (sender,)
@@ -147,7 +188,7 @@ class GroupAudit:
                 self.save(db, pending[0], pending[1], {"image": msg})
         return None
 
-    def collect_photo(self, sender, identity, msg):
+    def collect_material(self, sender, identity, msg):
         with self.connect() as db:
             row = db.execute(
                 "SELECT batch,at,reviewed,overflow FROM auto_batches WHERE sender=?", (sender,)
@@ -182,14 +223,14 @@ class GroupAudit:
             selected = own or batches
             if len(selected) != 1:
                 return (
-                    "没有可审核的近期图片，请先发单据图片再 @我 审核。"
+                    "没有可审核的近期材料，请先发订单文字或单据图片再 @我 审核；也可在同一条消息首行写 @我 审核，下面粘贴正文。"
                     if not selected
-                    else "近期有多人发图，无法确定审核哪一单。请由发图的人本人 @我 审核，避免串单。"
+                    else "近期有多人发材料，无法确定审核哪一单。请由发材料的人本人 @我 审核，避免串单。"
                 )
             owner, batch, overflow = selected[0]
             if overflow:
                 db.execute("UPDATE auto_batches SET reviewed=1 WHERE sender=?", (owner,))
-                return "这批超过4张图片，未开始审核。请分成最多4张一批重新发送，再 @我 审核。"
+                return "这批超过4份材料，未开始审核。请分成最多4份（文字和图片合计）一批重新发送，再 @我 审核。"
             rows = db.execute(
                 "SELECT id,raw,parsed FROM auto_photos WHERE batch=? ORDER BY rowid", (batch,)
             ).fetchall()
@@ -200,10 +241,14 @@ class GroupAudit:
                 if parsed:
                     item = Recognized.model_validate_json(parsed)
                 else:
-                    path = self.image_loader(self.group, json.loads(raw))
-                    item = self.extract.auto_image(path)
+                    material = json.loads(raw)
+                    if "_audit_text" in material:
+                        item = self.extract.auto_text(material["_audit_text"])
+                    else:
+                        path = self.image_loader(self.group, material)
+                        item = self.extract.auto_image(path)
                     if len(item.document.lines) > 30:
-                        raise ExtractionError("该图超过30行，请拆分为独立单据。")
+                        raise ExtractionError("该份材料超过30行商品，请拆分为独立单据。")
                     with self.connect() as db:
                         db.execute(
                             "UPDATE auto_photos SET parsed=? WHERE id=?",
@@ -212,7 +257,7 @@ class GroupAudit:
                 item.image_index = i
                 items.append(item)
             except ExtractionError as error:
-                errors.append(f"第{i}张未完成识别：{error}")
+                errors.append(f"第{i}份材料未完成识别：{error}")
         return summarize(
             items,
             errors,

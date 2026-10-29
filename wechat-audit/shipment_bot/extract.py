@@ -188,9 +188,15 @@ class Extractor:
         return self.parse(text, warnings)
 
     def auto_image(self, path: Path):
+        text, warnings = self.read_image(path)
+        return self._recognize(text, warnings, "image")
+
+    def auto_text(self, text: str):
+        return self._recognize(text, [], "text")
+
+    def _recognize(self, text, warnings, source_type):
         from shipment_bot.auto_review import Recognized, classify
 
-        text, warnings = self.read_image(path)
         document = self.parse(text, warnings)
         source = norm(text)
         for field in ("customer", "reference_order_id", "document_number"):
@@ -199,7 +205,7 @@ class Extractor:
                 setattr(document, field, None)
                 document.uncertainties.append(f"{field}无法在原文定位，不用于自动配对。")
         kind, title = classify(text)
-        return Recognized(document=document, kind=kind, title=title)
+        return Recognized(document=document, kind=kind, title=title, source_type=source_type)
 
     def check_api(self) -> None:
         # A real, bounded generation check; successful connectivity alone is insufficient.

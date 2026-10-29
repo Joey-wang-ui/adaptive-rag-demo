@@ -146,7 +146,7 @@ def main():
     listener.add_listener(group, on_message)
     listener.start()
     publish_state("running", account=account, group=group, name=config["group_name"])
-    print("已启用指定群审单。发单据图片后 @昵称 审核 即可；Ctrl+C 停止。", flush=True)
+    print("已启用指定群审单。发订单文字或单据图片后 @昵称 审核 即可；Ctrl+C 停止。", flush=True)
     try:
         while True:
             time.sleep(1)
