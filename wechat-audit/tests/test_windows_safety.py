@@ -74,8 +74,18 @@ def test_job_close_kills_live_tree(tmp_path):
             output,
         )
     assert process.poll() is None
-    process.close()
-    assert process.job is None and process.handle is None
+    # Retain a separate wait handle so closing our wrapper cannot fake this assertion.
+    kernel = process.kernel
+    kernel.OpenProcess.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_uint]
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    wait_handle = kernel.OpenProcess(0x100000, False, process.pid)  # SYNCHRONIZE
+    assert wait_handle
+    try:
+        process.close()
+        assert kernel.WaitForSingleObject(wait_handle, 5000) == 0
+        assert process.job is None and process.handle is None
+    finally:
+        kernel.CloseHandle(wait_handle)
 
 
 def test_global_escape_with_minimized_ui_and_foreign_foreground(tmp_path):
