@@ -11,6 +11,8 @@ license: mit
 
 ## 本仓库：客服演示与微信审单试用
 
+**微信 4.2 群消息读取检查：** 双击 **`check-wechat-groups.cmd`**，在自己的 Windows 上对一个手动打开的测试群做只读实机检测；不需要 API Key。当前尚未确认兼容 4.2.0.6，未实现群单据原图获取或群自动审单。详见 [群聊检查说明](wechat-audit/GROUPS.md)。
+
 **微信私聊发货前审单（新增试运行版）：** 完整解压后双击 **`start-wechat-audit.cmd`**，自动安装固定版本 OpenClaw、腾讯官方微信插件和小型 OCR 组件，复用或隐藏输入 DeepSeek Key，检查后扫码连接微信。发送确认订单和出货单图片，机器人回复商品、规格、数量、成交价和金额差异，人工确认绑定具体版本。当前是单操作者辅助审单，不支持直接进普通微信群、分岗审批或库存联动。详见 [微信审单启动与使用说明](wechat-audit/README.md)。
 
 **使用 DeepSeek 官方 API：** 双击 **`start-api.cmd`**，在本机终端隐藏输入 API Key（输入时不显示字符），或直接回车复用环境变量 / `.env` 中已有的 `DEEPSEEK_API_KEY`。密钥不写入文件或命令参数；先通过一次最多 64 个输出 token 的真实 JSON 生成检查，再启动聊天网页。无需 Ollama 或模型下载。API 按供应商规则计费，需账号有可用余额/额度；一次聊天可能多次调用模型。详见 [API 启动说明](DEPLOYMENT.md#deepseek-官方-api-启动)。
