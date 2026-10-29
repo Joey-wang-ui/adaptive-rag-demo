@@ -19,7 +19,6 @@ def self_test():
 
         import wechatauto  # noqa: F401
         from shipment_bot.extract import Extractor
-
         from shipment_bot.windows_safety import GlobalEscape
 
         hotkey = GlobalEscape()

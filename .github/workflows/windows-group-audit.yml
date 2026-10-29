@@ -38,11 +38,18 @@ jobs:
         run: |
           python -m pip install pytest==8.4.2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pytest -q wechat-audit/tests 2>&1 | Tee-Object -FilePath desktop-tests.log
+          cmd /c "python -m pytest -q wechat-audit/tests > desktop-tests.log 2>&1"
           $testExit = $LASTEXITCODE
-          $report = '```text' + "`n" + (Get-Content desktop-tests.log -Raw) + "`n" + '```'
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $report
+          Get-Content desktop-tests.log
           exit $testExit
+      - name: Record desktop test report
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path desktop-tests.log) {
+            $report = '```text' + "`n" + (Get-Content desktop-tests.log -Raw) + "`n" + '```'
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $report
+          }
       - name: Build desktop application
         run: python wechat-audit/build_desktop.py
       - name: Check packaged OCR and imports without WeChat or API
