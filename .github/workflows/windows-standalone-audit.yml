@@ -24,7 +24,15 @@ jobs:
       - name: Install standalone dependencies only
         run: python -m pip install -r wechat-audit/standalone-build-requirements.txt
       - name: Test standalone workflow and existing arithmetic/extraction
-        run: python -m pytest -q wechat-audit/tests/test_standalone.py wechat-audit/tests/test_review.py wechat-audit/tests/test_auto_review.py wechat-audit/tests/test_text_materials.py
+        shell: pwsh
+        run: |
+          python -m pytest -q --tb=short wechat-audit/tests/test_standalone.py wechat-audit/tests/test_review.py wechat-audit/tests/test_auto_review.py wechat-audit/tests/test_text_materials.py *> audit-tests.log
+          $testExit = $LASTEXITCODE
+          Get-Content audit-tests.log
+          '```text' | Out-File -Append $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          Get-Content audit-tests.log -Tail 150 | Out-File -Append $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          '```' | Out-File -Append $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          exit $testExit
       - name: Build independent executable
         run: python wechat-audit/build_standalone.py
       - name: Check packaged Tk OCR DPAPI and forbidden imports (no real API)
