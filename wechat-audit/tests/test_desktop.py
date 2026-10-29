@@ -95,3 +95,30 @@ def test_exit_success_without_detection_status_is_not_claimed_ready(tmp_path, mo
     controller.start("check")
     controller.poll()
     assert controller.state == "error"
+
+
+def test_switch_provider_removes_old_key_and_persists_preferences(tmp_path):
+    save_settings(tmp_path, "测试群", "审单bot", "old-provider-key", True)
+    config = save_settings(
+        tmp_path,
+        "测试群",
+        "审单bot",
+        "old-provider-key",
+        True,
+        llm={"base_url": "https://new.example.test/v1", "model": "small-v1"},
+        audit={"instructions": "注意规格简称", "require_customer": True},
+    )
+    assert not (tmp_path / "api-key.txt").exists()
+    assert config["llm"]["model"] == "small-v1"
+    assert config["audit"]["require_customer"] is True
+    assert config["audit"]["instructions"] == "注意规格简称"
+    save_settings(
+        tmp_path,
+        "测试群",
+        "审单bot",
+        "new-provider-key",
+        True,
+        llm=config["llm"],
+        audit=config["audit"],
+    )
+    assert (tmp_path / "api-key.txt").read_text() == "new-provider-key"

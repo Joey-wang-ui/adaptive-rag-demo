@@ -9,6 +9,7 @@ import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 
+from shipment_bot.auto_review import Recognized, summarize
 from shipment_bot.extract import ExtractionError
 from shipment_bot.models import Document
 from shipment_bot.review import compare, render
@@ -23,6 +24,18 @@ def command(text, nickname):
     return match.group(1) if match else None
 
 
+def automatic_request(text, nickname):
+    text = unicodedata.normalize("NFKC", text).strip()
+    nickname = unicodedata.normalize("NFKC", nickname).strip()
+    return bool(
+        re.fullmatch(
+            rf"@{re.escape(nickname)}\s+(?:请)?(?:帮我)?(?:审核|审查|审单|检查|看看|看下|看一下)"
+            r"(?:一下)?(?:这(?:张|份|些)?(?:单据|出货单|单)?|出货单|单据)?[。.!！?？]*",
+            text,
+        )
+    )
+
+
 def resolve_group(db, name):
     hits = {
         row["username"]
@@ -35,11 +48,22 @@ def resolve_group(db, name):
 
 
 class GroupAudit:
-    def __init__(self, path, group, account, nickname, extract, image_loader, clock=time.time):
+    def __init__(
+        self,
+        path,
+        group,
+        account,
+        nickname,
+        extract,
+        image_loader,
+        clock=time.time,
+        audit_options=None,
+    ):
         if not group.endswith("@chatroom") or not account or not nickname.strip():
             raise ValueError("必须绑定真实群 ID、当前账号和机器人群昵称。")
         self.group, self.account, self.nickname = group, account, nickname
         self.extract, self.image_loader, self.clock = extract, image_loader, clock
+        self.audit_options = audit_options or {}
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
@@ -48,9 +72,13 @@ class GroupAudit:
                 CREATE TABLE IF NOT EXISTS pending(sender TEXT PRIMARY KEY, code TEXT, role TEXT, at REAL);
                 CREATE TABLE IF NOT EXISTS materials(code TEXT, role TEXT, raw TEXT, parsed TEXT, at REAL,
                     PRIMARY KEY(code,role));
+                CREATE TABLE IF NOT EXISTS auto_batches(sender TEXT PRIMARY KEY,batch TEXT,at REAL,reviewed INTEGER,overflow INTEGER);
+                CREATE TABLE IF NOT EXISTS auto_photos(id TEXT PRIMARY KEY,sender TEXT,batch TEXT,raw TEXT,parsed TEXT);
             """)
             # Never attach a new-session image to yesterday's pending label.
             db.execute("DELETE FROM pending")
+            db.execute("DELETE FROM auto_batches")
+            db.execute("DELETE FROM auto_photos")
 
     @contextmanager
     def connect(self):
@@ -90,6 +118,10 @@ class GroupAudit:
                 return self.audit(code)
             except ExtractionError as error:
                 return f"{code} 待确认：{error}\n本次未完成核对，请人工核实后发货。"
+        if kind == "text" and automatic_request(text, self.nickname):
+            return self.auto_audit(sender)
+        if kind == "image":
+            self.collect_photo(sender, identity, msg)
         label = re.fullmatch(rf"(订单|出货单)\s+({CASE})(?:\n([\s\S]+))?", text)
         if kind == "text" and label:
             role = "order" if label[1] == "订单" else "delivery"
@@ -114,6 +146,79 @@ class GroupAudit:
             if pending and kind == "image" and self.clock() - pending[2] <= 120:
                 self.save(db, pending[0], pending[1], {"image": msg})
         return None
+
+    def collect_photo(self, sender, identity, msg):
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT batch,at,reviewed,overflow FROM auto_batches WHERE sender=?", (sender,)
+            ).fetchone()
+            if not row or row[2] or self.clock() - row[1] > 120:
+                db.execute("DELETE FROM auto_photos WHERE sender=?", (sender,))
+                db.execute(
+                    "INSERT OR REPLACE INTO auto_batches VALUES (?,?,?,0,0)",
+                    (sender, identity, self.clock()),
+                )
+                batch = identity
+            else:
+                batch = row[0]
+            count = db.execute(
+                "SELECT count(*) FROM auto_photos WHERE batch=?", (batch,)
+            ).fetchone()[0]
+            if count >= 4:
+                db.execute("UPDATE auto_batches SET overflow=1 WHERE sender=?", (sender,))
+                return
+            db.execute(
+                "INSERT OR IGNORE INTO auto_photos VALUES (?,?,?,?,NULL)",
+                (identity, sender, batch, json.dumps(msg, ensure_ascii=False)),
+            )
+            db.execute("UPDATE auto_batches SET at=? WHERE sender=?", (self.clock(), sender))
+
+    def auto_audit(self, sender):
+        with self.connect() as db:
+            batches = db.execute(
+                "SELECT sender,batch,overflow FROM auto_batches WHERE at>=?", (self.clock() - 600,)
+            ).fetchall()
+            own = [row for row in batches if row[0] == sender]
+            selected = own or batches
+            if len(selected) != 1:
+                return (
+                    "没有可审核的近期图片，请先发单据图片再 @我 审核。"
+                    if not selected
+                    else "近期有多人发图，无法确定审核哪一单。请由发图的人本人 @我 审核，避免串单。"
+                )
+            owner, batch, overflow = selected[0]
+            if overflow:
+                db.execute("UPDATE auto_batches SET reviewed=1 WHERE sender=?", (owner,))
+                return "这批超过4张图片，未开始审核。请分成最多4张一批重新发送，再 @我 审核。"
+            rows = db.execute(
+                "SELECT id,raw,parsed FROM auto_photos WHERE batch=? ORDER BY rowid", (batch,)
+            ).fetchall()
+            db.execute("UPDATE auto_batches SET reviewed=1 WHERE sender=?", (owner,))
+        items, errors = [], []
+        for i, (identity, raw, parsed) in enumerate(rows, 1):
+            try:
+                if parsed:
+                    item = Recognized.model_validate_json(parsed)
+                else:
+                    path = self.image_loader(self.group, json.loads(raw))
+                    item = self.extract.auto_image(path)
+                    if len(item.document.lines) > 30:
+                        raise ExtractionError("该图超过30行，请拆分为独立单据。")
+                    with self.connect() as db:
+                        db.execute(
+                            "UPDATE auto_photos SET parsed=? WHERE id=?",
+                            (item.model_dump_json(), identity),
+                        )
+                item.image_index = i
+                items.append(item)
+            except ExtractionError as error:
+                errors.append(f"第{i}张未完成识别：{error}")
+        return summarize(
+            items,
+            errors,
+            bool(self.audit_options.get("require_customer", False)),
+            bool(self.audit_options.get("require_specification", False)),
+        )
 
     def save(self, db, code, role, raw):
         db.execute(

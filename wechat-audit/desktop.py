@@ -78,7 +78,7 @@ def main():
         return
 
     root = tk.Tk()
-    root.title("嘉惠 · 微信群审单助手")
+    root.title("嘉惠 · 微信群审单助手 v0.2 · 自动识单")
     root.geometry("900x740")
     root.minsize(800, 680)
     root.configure(bg="#f4f7fb")
@@ -105,6 +105,13 @@ def main():
     remember = tk.BooleanVar(value=bool(saved_key))
     state = tk.StringVar(value="未启动 · 不会自动回复")
     identity = tk.StringVar(value="尚未检测账号与群，请先点击“检测连接”。")
+    api_url = tk.StringVar(value=config.get("llm", {}).get("base_url", "https://api.deepseek.com"))
+    model_name = tk.StringVar(value=config.get("llm", {}).get("model", "deepseek-chat"))
+    instructions = config.get("audit", {}).get("instructions", "")
+    require_customer = tk.BooleanVar(value=config.get("audit", {}).get("require_customer", False))
+    require_specification = tk.BooleanVar(
+        value=config.get("audit", {}).get("require_specification", False)
+    )
 
     body = ttk.Frame(root, padding=28)
     body.pack(fill="both", expand=True)
@@ -124,7 +131,7 @@ def main():
         [
             ("指定群名称", group, False),
             ("机器人群昵称", nickname, False),
-            ("DeepSeek API Key", key, True),
+            ("模型 API Key", key, True),
         ]
     ):
         ttk.Label(form, text=label, width=20).grid(row=row, column=0, sticky="w", pady=5)
@@ -146,7 +153,96 @@ def main():
         log.configure(state="disabled")
 
     def save():
-        return save_settings(directory, group.get(), nickname.get(), key.get(), remember.get())
+        return save_settings(
+            directory,
+            group.get(),
+            nickname.get(),
+            key.get(),
+            remember.get(),
+            llm={"base_url": api_url.get(), "model": model_name.get()},
+            audit={
+                "instructions": instructions,
+                "require_customer": require_customer.get(),
+                "require_specification": require_specification.get(),
+            },
+        )
+
+    def settings():
+        nonlocal instructions
+        dialog = tk.Toplevel(root)
+        dialog.title("模型与审核设置")
+        dialog.geometry("700x550")
+        dialog.transient(root)
+        dialog.grab_set()
+        panel = ttk.Frame(dialog, padding=24)
+        panel.pack(fill="both", expand=True)
+        url_var, model_var = tk.StringVar(value=api_url.get()), tk.StringVar(value=model_name.get())
+        customer_var = tk.BooleanVar(value=require_customer.get())
+        spec_var = tk.BooleanVar(value=require_specification.get())
+        for label, variable in [
+            ("接口地址 Base URL（OpenAI 兼容）", url_var),
+            ("模型名（按平台填写）", model_var),
+        ]:
+            ttk.Label(panel, text=label).pack(anchor="w", pady=(0, 4))
+            ttk.Entry(panel, textvariable=variable).pack(fill="x", pady=(0, 12))
+        ttk.Label(
+            panel,
+            text="支持文字 Chat Completions + JSON 输出；不直接支持 Anthropic 等原生协议。",
+            foreground="#547080",
+            wraplength=640,
+        ).pack(anchor="w", pady=(0, 12))
+        ttk.Checkbutton(panel, text="客户名称缺失时也提醒", variable=customer_var).pack(anchor="w")
+        ttk.Checkbutton(panel, text="规格缺失时也提醒", variable=spec_var).pack(anchor="w")
+        ttk.Label(panel, text="补充审核 / 提取要求（可改商品简称、关注点；不能替代单据证据）").pack(
+            anchor="w", pady=(14, 6)
+        )
+        editor = scrolledtext.ScrolledText(panel, height=6, font=("Microsoft YaHei UI", 10))
+        editor.insert("1.0", instructions)
+        editor.pack(fill="both", expand=True)
+        ttk.Label(
+            panel, text="金额计算、单位不清提示和不自动批准发货始终保留。", foreground="#547080"
+        ).pack(anchor="w", pady=8)
+
+        def apply():
+            nonlocal instructions
+            old = (
+                api_url.get(),
+                model_name.get(),
+                instructions,
+                require_customer.get(),
+                require_specification.get(),
+            )
+            old_key, old_remember = key.get(), remember.get()
+            api_url.set(url_var.get())
+            model_name.set(model_var.get())
+            instructions = editor.get("1.0", "end").strip()
+            require_customer.set(customer_var.get())
+            require_specification.set(spec_var.get())
+            changed_endpoint = api_url.get().strip().rstrip("/") != old[0].strip().rstrip("/")
+            if changed_endpoint:
+                key.set("")
+                remember.set(False)
+            try:
+                save()
+            except (ValueError, OSError) as error:
+                api_url.set(old[0])
+                model_name.set(old[1])
+                instructions = old[2]
+                require_customer.set(old[3])
+                require_specification.set(old[4])
+                key.set(old_key)
+                remember.set(old_remember)
+                messagebox.showerror("无法保存", str(error), parent=dialog)
+                return
+            dialog.destroy()
+            if changed_endpoint:
+                messagebox.showinfo(
+                    "已切换接口",
+                    "请在主界面填写新平台的 API Key。旧 Key 已清除，不会自动转发给新平台。",
+                    parent=root,
+                )
+
+        ttk.Button(panel, text="保存设置", command=apply).pack(anchor="e", pady=(8, 0))
 
     def launch(mode):
         try:
@@ -170,17 +266,19 @@ def main():
     start_button.pack(side="left", padx=10)
     stop_button = ttk.Button(controls, text="停止", command=controller.stop, state="disabled")
     stop_button.pack(side="left")
+    settings_button = ttk.Button(controls, text="模型与审核设置", command=settings)
+    settings_button.pack(side="right")
     ttk.Label(body, textvariable=identity, foreground="#547080", wraplength=820).pack(
         anchor="w", pady=(2, 10)
     )
     ttk.Label(
         body,
-        text="群内用法：订单 A001 → 发图 → 出货单 A001 → 发图 → @审单bot 审核 A001",
+        text="群内用法：发一张或多张清晰单据图片 → @审单bot 审核（不必填标签或编号）",
         wraplength=820,
     ).pack(anchor="w")
     ttk.Label(
         body,
-        text="每张图由发标签的同一人紧接着发送；普通消息不回复。审核结果不代表批准发货。",
+        text="一次最多4张，默认取本人最近10分钟的一批图片；只有出货单也能自查。普通消息不回复。",
         foreground="#547080",
         wraplength=820,
     ).pack(anchor="w", pady=(4, 12))
@@ -225,7 +323,7 @@ def main():
                 f"账号：{status['account']}    群：{status.get('name', '')} ({status.get('group', '')})"
             )
         busy = controller.busy
-        for widget in [*entries, remember_box, check_button, start_button]:
+        for widget in [*entries, remember_box, check_button, start_button, settings_button]:
             widget.configure(state="disabled" if busy else "normal")
         stop_button.configure(state="normal" if busy and not controller.stopping else "disabled")
         if closing and not busy:

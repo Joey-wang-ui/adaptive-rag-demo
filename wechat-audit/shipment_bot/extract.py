@@ -6,6 +6,7 @@ import threading
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from PIL import Image, UnidentifiedImageError
@@ -53,11 +54,39 @@ def validate_image(path: Path, roots: list[Path]) -> Path:
 
 
 class Extractor:
-    def __init__(self, api_key: str, *, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        transport: httpx.BaseTransport | None = None,
+        base_url: str = "https://api.deepseek.com",
+        model: str = "deepseek-chat",
+        instructions: str = "",
+    ):
         if not api_key.strip():
-            raise ExtractionError("尚未配置 DeepSeek API Key，请重新打开启动程序。")
+            raise ExtractionError("尚未配置模型 API Key，请重新打开启动程序。")
         self.api_key = api_key
         self.transport = transport
+        url = urlsplit(base_url.strip())
+        if (
+            url.scheme not in {"https", "http"}
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or (url.scheme == "http" and url.hostname not in {"localhost", "127.0.0.1", "::1"})
+        ):
+            raise ExtractionError(
+                "接口地址需为 HTTPS（本机接口可用 HTTP），不能在 URL 中携带密钥或查询参数。"
+            )
+        self.endpoint = base_url.strip().rstrip("/")
+        if not self.endpoint.endswith("/chat/completions"):
+            self.endpoint += "/chat/completions"
+        if not model.strip() or len(model) > 200:
+            raise ExtractionError("请填写有效的模型名称。")
+        self.model = model.strip()
+        self.instructions = instructions[:3000]
         self._ocr: Any = None
         self._ocr_lock = threading.Lock()
 
@@ -85,14 +114,18 @@ class Extractor:
             raise ExtractionError("待识别文本为空或超过 20000 字，请分单处理。")
         schema = Document.model_json_schema()
         request = {
-            "model": "deepseek-chat",
+            "model": self.model,
             "temperature": 0,
             "max_tokens": 6000,
             "response_format": {"type": "json_object"},
             "messages": [
                 {
                     "role": "system",
-                    "content": SYSTEM + "\nJSON Schema:\n" + json.dumps(schema, ensure_ascii=False),
+                    "content": SYSTEM
+                    + "\n用户补充提取要求（不能补造单据数据）：\n"
+                    + self.instructions
+                    + "\nJSON Schema:\n"
+                    + json.dumps(schema, ensure_ascii=False),
                 },
                 {
                     "role": "user",
@@ -103,7 +136,7 @@ class Extractor:
         try:
             with httpx.Client(timeout=90, transport=self.transport) as client:
                 response = client.post(
-                    "https://api.deepseek.com/chat/completions",
+                    self.endpoint,
                     headers={"Authorization": "Bearer " + self.api_key},
                     json=request,
                 )
@@ -154,15 +187,29 @@ class Extractor:
         text, warnings = self.read_image(path)
         return self.parse(text, warnings)
 
+    def auto_image(self, path: Path):
+        from shipment_bot.auto_review import Recognized, classify
+
+        text, warnings = self.read_image(path)
+        document = self.parse(text, warnings)
+        source = norm(text)
+        for field in ("customer", "reference_order_id", "document_number"):
+            value = getattr(document, field)
+            if value and norm(value) not in source:
+                setattr(document, field, None)
+                document.uncertainties.append(f"{field}无法在原文定位，不用于自动配对。")
+        kind, title = classify(text)
+        return Recognized(document=document, kind=kind, title=title)
+
     def check_api(self) -> None:
         # A real, bounded generation check; successful connectivity alone is insufficient.
         try:
             with httpx.Client(timeout=45, transport=self.transport) as client:
                 response = client.post(
-                    "https://api.deepseek.com/chat/completions",
+                    self.endpoint,
                     headers={"Authorization": "Bearer " + self.api_key},
                     json={
-                        "model": "deepseek-chat",
+                        "model": self.model,
                         "max_tokens": 32,
                         "response_format": {"type": "json_object"},
                         "messages": [

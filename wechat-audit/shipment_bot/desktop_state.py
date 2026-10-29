@@ -7,6 +7,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def data_directory():
@@ -15,16 +16,44 @@ def data_directory():
     return Path(__file__).resolve().parents[1] / "data/group-audit"
 
 
-def save_settings(directory, group, nickname, key, remember):
+def save_settings(directory, group, nickname, key, remember, llm=None, audit=None):
     group, nickname = group.strip(), nickname.strip()
     if not group or not nickname or any("\n" in x or "\r" in x for x in (group, nickname)):
         raise ValueError("请填写完整的群名和群昵称，不能包含换行。")
+    if llm is not None:
+        url = urlsplit(llm["base_url"].strip())
+        if (
+            not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or url.scheme not in {"https", "http"}
+            or (url.scheme == "http" and url.hostname not in {"localhost", "127.0.0.1", "::1"})
+        ):
+            raise ValueError("请填写 HTTPS 接口地址（本机可用 HTTP），密钥只填在 Key 栏。")
+        if not llm["model"].strip():
+            raise ValueError("模型名称不能为空。")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "config.json"
     config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    old_endpoint = (
+        config.get("llm", {}).get("base_url", "https://api.deepseek.com").strip().rstrip("/")
+    )
+    if llm is not None and llm["base_url"].strip().rstrip("/") != old_endpoint:
+        # Never transfer a saved credential to a newly configured provider.
+        key, remember = "", False
     if (config.get("group_name"), config.get("bot_nickname")) != (group, nickname):
         config.pop("binding", None)
     config.update(group_name=group, bot_nickname=nickname)
+    if llm is not None:
+        config["llm"] = {"base_url": llm["base_url"].strip(), "model": llm["model"].strip()}
+    if audit is not None:
+        config["audit"] = {
+            "instructions": str(audit.get("instructions", ""))[:3000],
+            "require_customer": bool(audit.get("require_customer", False)),
+            "require_specification": bool(audit.get("require_specification", False)),
+        }
     path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     key_path = directory / "api-key.txt"
     if remember and key.strip():
@@ -59,7 +88,7 @@ class Controller:
         if mode == "run" and not config.get("binding"):
             raise ValueError("请先点击“检测连接”，检查显示的账号和群是否正确。")
         if mode == "run" and not key.strip() and not (self.directory / "api-key.txt").exists():
-            raise ValueError("请填写 DeepSeek API Key。")
+            raise ValueError("请填写模型 API Key。")
         logs = self.directory / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         token = uuid.uuid4().hex

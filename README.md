@@ -11,7 +11,7 @@ license: mit
 
 ## 本仓库：客服演示与微信审单试用
 
-**微信群审单桌面界面：** 双击 **`open-group-audit.cmd`**，在窗口填写群名、昵称和 Key，点击检测 / 启动 / 停止。打开软件不自动回复。需要已安装的 Python 3.12；独立 Windows 软件包由仓库 Actions 构建。详见 [桌面版说明](wechat-audit/DESKTOP.md)。
+**微信群审单桌面界面：** 双击 **`open-group-audit.cmd`**，填写群名、昵称和 Key，点击检测 / 启动 / 停止。新版直接发1～4张单据图片再 @审核，只有出货单也能自查，不要求标签编号；软件内可改审核偏好并接其他 OpenAI 兼容 LLM。打开软件不自动回复。需要已安装的 Python 3.12；独立 Windows 软件包由仓库 Actions 构建。详见 [桌面版说明](wechat-audit/DESKTOP.md)。
 
 **指定微信群审单（实验适配器）：** 先运行 **`setup-group-audit.cmd`** 检测指定群文字读取，再运行 **`start-group-audit.cmd`** 启用该群的 @ 审核与自动回群。复用第三方微信收发底层和现有本地 OCR/DeepSeek/金额核对，不需要完整聊天机器人。首次只填群名、昵称和 API Key。完整配置与图片关联规则见 [GROUP-AUDIT.md](wechat-audit/GROUP-AUDIT.md)。**微信 4.2.0.6 尚未实测兼容。**
 

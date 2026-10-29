@@ -10,6 +10,10 @@ on:
       - 'wechat-audit/build_desktop.py'
       - 'wechat-audit/desktop-build-requirements.txt'
       - 'wechat-audit/shipment_bot/desktop_state.py'
+      - 'wechat-audit/shipment_bot/auto_review.py'
+      - 'wechat-audit/shipment_bot/group_audit.py'
+      - 'wechat-audit/shipment_bot/extract.py'
+      - 'wechat-audit/shipment_bot/group_runtime.py'
 
 permissions:
   contents: read

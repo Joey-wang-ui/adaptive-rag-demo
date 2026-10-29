@@ -37,7 +37,7 @@ def main():
             raise RuntimeError("请先在软件界面保存群名和昵称。")
         config["group_name"] = input("只监听的群名（必须唯一）：").strip()
         config["bot_nickname"] = input("机器人在这个群的昵称：").strip()
-        if not all(config.values()):
+        if not config["group_name"] or not config["bot_nickname"]:
             raise ValueError("群名和昵称不可为空。")
         CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     # Importing this library reads local databases/process memory. No model API at check stage.
@@ -70,11 +70,17 @@ def main():
         if os.environ.get("JIAHUI_AUDIT_NO_PROMPT"):
             raise RuntimeError("请在软件界面填写 API Key。")
         print("Key 仅保存在本机 wechat-audit/data/group-audit/api-key.txt；不要分享此文件夹。")
-        key = getpass.getpass("DeepSeek API Key（输入不显示）：").strip()
+        key = getpass.getpass("模型 API Key（输入不显示）：").strip()
         if not key:
             raise RuntimeError("API Key 不可为空。")
         key_file.write_text(key, encoding="utf-8")
-    extractor = Extractor(key)
+    llm, audit_options = config.get("llm", {}), config.get("audit", {})
+    extractor = Extractor(
+        key,
+        base_url=llm.get("base_url", "https://api.deepseek.com"),
+        model=llm.get("model", "deepseek-chat"),
+        instructions=audit_options.get("instructions", ""),
+    )
     print("正在加载本地 OCR；不下载本地语言模型。", flush=True)
     extractor.prepare_ocr()
     media = MediaDownloader(db)
@@ -111,6 +117,7 @@ def main():
         config["bot_nickname"],
         extractor,
         image_loader,
+        audit_options=audit_options,
     )
 
     def on_message(message, _listener):
@@ -139,7 +146,7 @@ def main():
     listener.add_listener(group, on_message)
     listener.start()
     publish_state("running", account=account, group=group, name=config["group_name"])
-    print("已启用指定群审单。只有 @昵称 审核 编号 才回复；Ctrl+C 停止。", flush=True)
+    print("已启用指定群审单。发单据图片后 @昵称 审核 即可；Ctrl+C 停止。", flush=True)
     try:
         while True:
             time.sleep(1)
