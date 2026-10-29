@@ -3,13 +3,17 @@ name: Build Windows group audit desktop
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'codex/global-esc-stop']
     paths:
       - '.github/workflows/windows-group-audit.yml'
       - 'wechat-audit/desktop.py'
       - 'wechat-audit/build_desktop.py'
       - 'wechat-audit/desktop-build-requirements.txt'
       - 'wechat-audit/shipment_bot/desktop_state.py'
+      - 'wechat-audit/shipment_bot/windows_safety.py'
+      - 'wechat-audit/group_launch.py'
+      - 'wechat-audit/tests/**'
+      - 'wechat-audit/DESKTOP.md'
       - 'wechat-audit/shipment_bot/auto_review.py'
       - 'wechat-audit/shipment_bot/group_audit.py'
       - 'wechat-audit/shipment_bot/extract.py'
@@ -29,6 +33,10 @@ jobs:
           python-version: '3.12'
       - name: Install build and runtime dependencies
         run: python -m pip install -r wechat-audit/desktop-build-requirements.txt
+      - name: Test desktop lifecycle and real Windows emergency stop
+        run: |
+          python -m pip install pytest==8.4.2
+          python -m pytest -q wechat-audit/tests
       - name: Build desktop application
         run: python wechat-audit/build_desktop.py
       - name: Check packaged OCR and imports without WeChat or API

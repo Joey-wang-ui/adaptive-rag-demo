@@ -3,6 +3,7 @@
 import codecs
 import json
 import os
+import signal
 import subprocess
 import sys
 import uuid
@@ -67,9 +68,12 @@ def save_settings(
 
 
 class Controller:
-    def __init__(self, directory, root):
+    def __init__(self, directory, root, *, hotkey_factory=None, worker_factory=None):
         self.directory, self.root = directory, root
         self.process = None
+        self.hotkey = None
+        self.hotkey_factory = hotkey_factory
+        self.worker_factory = worker_factory
         self.mode = None
         self.stopping = False
         self.state = "idle"
@@ -80,7 +84,7 @@ class Controller:
 
     @property
     def busy(self):
-        return self.process is not None and self.process.poll() is None
+        return self.process is not None
 
     def start(self, mode, key=""):
         if self.busy:
@@ -120,34 +124,70 @@ class Controller:
             if getattr(sys, "frozen", False)
             else [interpreter, str(self.root / "group_launch.py"), mode]
         )
-        with self.logfile.open("ab") as output:
-            self.process = subprocess.Popen(
-                command,
-                cwd=self.root,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+        from shipment_bot.windows_safety import GlobalEscape, WindowsWorker
+
+        factory = self.hotkey_factory or (GlobalEscape if os.name == "nt" else None)
+        try:
+            if factory:
+                self.hotkey = factory()
+                self.hotkey.start()  # must succeed BEFORE any automation can run
+            with self.logfile.open("ab") as output:
+                if self.worker_factory or os.name == "nt":
+                    self.process = (self.worker_factory or WindowsWorker)(
+                        command, self.root, env, output
+                    )
+                else:
+                    self.process = subprocess.Popen(
+                        command,
+                        cwd=self.root,
+                        env=env,
+                        stdin=subprocess.DEVNULL,
+                        stdout=output,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=True,
+                    )
+        except Exception:
+            self._release_hotkey()
+            self.state = "error"
+            raise
         self.mode, self.stopping, self.state = mode, False, "starting"
 
+    def _release_hotkey(self):
+        if self.hotkey:
+            self.hotkey.close()
+            self.hotkey = None
+
     def stop(self):
-        if not self.busy:
+        if self.process is None or self.stopping:
             return
         self.stopping, self.state = True, "stopping"
-        if os.name == "nt":
-            # Kill only our owned worker and its installer/runtime children.
-            subprocess.Popen(
-                ["taskkill", "/PID", str(self.process.pid), "/T", "/F"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        else:
-            self.process.terminate()
+        try:
+            if hasattr(self.process, "stop_tree"):
+                self.process.stop_tree()
+            else:
+                try:
+                    os.killpg(self.process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        except OSError:
+            self.stopping = False  # allow a manual retry; never claim stopped
+            raise
+
+    def close(self):
+        """Last-resort cleanup, including abnormal UI exit (Job close kills tree)."""
+        try:
+            if self.process:
+                if hasattr(self.process, "close"):
+                    self.process.close()
+                else:
+                    self.stop()
+                self.process = None
+        finally:
+            self._release_hotkey()
 
     def poll(self):
+        if self.hotkey and self.hotkey.pressed.is_set():
+            self.stop()
         output = ""
         if self.logfile and self.logfile.exists():
             with self.logfile.open("rb") as file:
@@ -164,6 +204,13 @@ class Controller:
         if self.process is not None:
             code = self.process.poll()
             if code is not None:
+                if hasattr(self.process, "tree_alive") and self.process.tree_alive():
+                    # A worker that exits unexpectedly must not leave automation behind.
+                    self.process.stop_tree()
+                    return output, status
+                if hasattr(self.process, "close"):
+                    self.process.close()
+                self._release_hotkey()
                 self.state = (
                     "stopped"
                     if self.stopping

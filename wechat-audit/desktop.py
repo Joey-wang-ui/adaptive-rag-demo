@@ -78,7 +78,7 @@ def main():
         return
 
     root = tk.Tk()
-    root.title("嘉惠 · 微信群审单助手 v0.4 · 自测与防重复")
+    root.title("嘉惠 · 微信群审单助手 v0.5 · Esc 全局急停")
     root.geometry("900x790")
     root.minsize(800, 730)
     root.configure(bg="#f4f7fb")
@@ -117,9 +117,11 @@ def main():
     body = ttk.Frame(root, padding=28)
     body.pack(fill="both", expand=True)
     ttk.Label(body, text="嘉惠审单助手", font=("Microsoft YaHei UI", 23, "bold")).pack(anchor="w")
-    ttk.Label(body, text="指定微信群 · @ 触发 · 自动回群", foreground="#547080").pack(
-        anchor="w", pady=(5, 16)
-    )
+    ttk.Label(
+        body,
+        text="指定微信群 · @ 触发 · 自动回群 · 任务运行时按 Esc 全局急停",
+        foreground="#547080",
+    ).pack(anchor="w", pady=(5, 16))
     badge = ttk.Label(
         body, textvariable=state, foreground="#087f72", font=("Microsoft YaHei UI", 12, "bold")
     )
@@ -264,6 +266,12 @@ def main():
         except (ValueError, OSError) as error:
             messagebox.showerror("请检查配置", str(error), parent=root)
 
+    def stop():
+        try:
+            controller.stop()
+        except OSError as error:
+            messagebox.showerror("急停未完成", str(error), parent=root)
+
     controls = ttk.Frame(body)
     controls.pack(fill="x", pady=(0, 10))
     check_button = ttk.Button(controls, text="1  检测连接", command=lambda: launch("check"))
@@ -272,7 +280,7 @@ def main():
         controls, text="2  启动审单", style="Accent.TButton", command=lambda: launch("run")
     )
     start_button.pack(side="left", padx=10)
-    stop_button = ttk.Button(controls, text="停止", command=controller.stop, state="disabled")
+    stop_button = ttk.Button(controls, text="停止", command=stop, state="disabled")
     stop_button.pack(side="left")
     settings_button = ttk.Button(controls, text="模型与审核设置", command=settings)
     settings_button.pack(side="right")
@@ -313,7 +321,13 @@ def main():
     )
 
     def refresh():
-        output, status = controller.poll()
+        try:
+            output, status = controller.poll()
+        except OSError as error:
+            append(f"急停 / 生命周期错误：{error}\n")
+            state.set("停止未完成 · 请点击停止重试")
+            root.after(50, refresh)
+            return
         if output:
             append(output)
         labels = {
@@ -322,7 +336,7 @@ def main():
             "checked": "检测通过 · 尚未开启自动回复",
             "running": "运行中 · 指定群 @ 审核后自动回复",
             "stopping": "正在停止…",
-            "stopped": "已停止 · 不再处理新审核",
+            "stopped": "已急停 · 自动操作已终止；需手动点击启动审单",
             "error": "未能完成 · 请查看日志",
         }
         state.set(labels[controller.state])
@@ -344,20 +358,21 @@ def main():
         if closing and not busy:
             root.destroy()
             return
-        root.after(250, refresh)
+        root.after(50, refresh)
 
     def close():
         nonlocal closing
         closing = True
-        controller.stop()
+        stop()
         if not controller.busy:
             root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", close)
-    root.after(250, refresh)
+    root.after(50, refresh)
     try:
         root.mainloop()
     finally:
+        controller.close()
         lock.seek(0)
         msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
         lock.close()
