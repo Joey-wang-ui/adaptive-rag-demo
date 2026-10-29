@@ -8,8 +8,9 @@ import sys
 import time
 from pathlib import Path
 
-from shipment_bot.extract import ExtractionError, Extractor, validate_image
+from shipment_bot.extract import Extractor
 from shipment_bot.group_audit import REPLY_PREFIX, GroupAudit, resolve_group
+from shipment_bot.image_read import ImageReader
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.environ.get("JIAHUI_AUDIT_DATA_DIR", ROOT / "data/group-audit"))
@@ -87,27 +88,7 @@ def main():
     image_dir = DATA / "images"
     image_dir.mkdir(exist_ok=True)
 
-    def image_loader(target, message):
-        # No thumbnail substitution and no UI clicks to fetch originals.
-        path = media.download_image(
-            target,
-            int(message["local_id"]),
-            save_dir=str(image_dir),
-            tier="original",
-            shard=message.get("shard"),
-        )
-        if not path:
-            media.detect_image_key()
-            path = media.download_image(
-                target,
-                int(message["local_id"]),
-                save_dir=str(image_dir),
-                tier="original",
-                shard=message.get("shard"),
-            )
-        if not path:
-            raise ExtractionError("未取得单据原图。请在电脑微信打开图片并查看原图，再重新 @审核。")
-        return validate_image(Path(path), [image_dir])
+    image_loader = ImageReader(media, image_dir)
 
     store_name = __import__("hashlib").sha256((account + group).encode()).hexdigest()[:24]
     workflow = GroupAudit(
@@ -123,6 +104,14 @@ def main():
 
     def on_message(message, _listener):
         try:
+            if message.get("type") in {"图片", "image"}:
+                print(
+                    "收到图片消息，等待 @审核后读取；自己发图需开启“允许自己触发测试”。", flush=True
+                )
+                if not message.get("sender_username"):
+                    print(
+                        "本张图片未能解析发送者，未纳入审核；请重新发送，勿猜测归属。", flush=True
+                    )
             reply = workflow.handle(group, message)
             if reply is None:
                 return

@@ -33,8 +33,8 @@ def classify(text):
     return ("delivery", delivery[0]) if delivery else ("order", order[0])
 
 
-def self_check(doc, require_customer=False, require_specification=False):
-    issues = list(doc.uncertainties)
+def _check_document(doc, require_customer=False, require_specification=False):
+    issues, calculations, amounts = list(doc.uncertainties), [], []
     if require_customer and not doc.customer:
         issues.append("未识别到客户名称。")
     keys = [(norm(x.name), norm(x.specification)) for x in doc.lines]
@@ -46,44 +46,69 @@ def self_check(doc, require_customer=False, require_specification=False):
             issues.append(label + "商品名称无法辨认。")
         if require_specification and not row.specification:
             issues.append(label + "规格缺失。")
-        if row.quantity is None or row.unit_price is None or row.amount is None:
-            issues.append(label + "数量、单价或行金额不完整，无法核算。")
-            continue
-        if row.quantity <= 0 or row.unit_price == 0:
-            issues.append(label + "数量非正数或单价为零，请核实赠品、退货等情况。")
-        if not row.unit or not row.price_unit:
-            issues.append(label + "计价单位不明确；不默认按箱、件或公斤相乘。")
-        elif unit(row.unit) != unit(row.price_unit):
-            issues.append(label + f"数量单位{row.unit}与计价单位{row.price_unit}不同，需确认换算。")
-        elif money(row.quantity * row.unit_price) != row.amount:
-            issues.append(
-                label
-                + f"金额不符：数量×单价={money(row.quantity * row.unit_price)}，单据为{row.amount}。"
-            )
-    if doc.total is None:
-        issues.append("合计金额未识别到，无法核对总计。")
-    elif any(row.amount is None for row in doc.lines):
-        issues.append("部分行金额缺失，无法核对总计。")
+        expected = None
+        if row.quantity is None or row.unit_price is None:
+            issues.append(label + "数量或单价缺失，无法核算该行乘积。")
+        else:
+            if row.quantity <= 0 or row.unit_price == 0:
+                issues.append(label + "数量非正数或单价为零，请核实赠品、退货等情况。")
+            if not row.unit or not row.price_unit:
+                issues.append(label + "计价单位不明确；不默认按箱、件或公斤相乘。")
+            elif unit(row.unit) != unit(row.price_unit):
+                issues.append(
+                    label + f"数量单位{row.unit}与计价单位{row.price_unit}不同，需确认换算。"
+                )
+            else:
+                expected = money(row.quantity * row.unit_price)
+                if row.amount is not None and expected != row.amount:
+                    issues.append(label + f"金额不符：数量×单价={expected}，单据为{row.amount}。")
+        if row.amount is None:
+            if expected is not None:
+                calculations.append(
+                    label + f"原文未写行金额；按{row.quantity}{row.unit}×"
+                    f"{row.unit_price}元/{row.price_unit}计算为{expected}元（计算值）。"
+                )
+            else:
+                issues.append(label + "行金额未填写，且现有数量、单价或单位不足以计算。")
+        amounts.append(row.amount if row.amount is not None else expected)
+    if any(value is None for value in amounts):
+        issues.append("部分行金额缺失且无法计算，无法完整核对总计。")
     else:
-        total = sum((row.amount or Decimal(0) for row in doc.lines), Decimal(0))
-        if total != doc.total:
-            issues.append(
-                f"合计不符：逐行相加{money(total)}，单据合计{doc.total}；折扣、运费、税费需单独说明。"
+        total = sum(amounts, Decimal(0))
+        if doc.total is None:
+            calculations.append(
+                f"已列商品金额合计{money(total)}元（计算值）；原文未写合计，无法比对。"
             )
-    return list(dict.fromkeys(issues))
+        elif total != doc.total:
+            basis = "按已列商品计算" if calculations else "逐行相加"
+            issues.append(
+                f"合计不符：{basis}{money(total)}，单据合计{doc.total}；折扣、运费、税费需单独说明。"
+            )
+        elif calculations:
+            calculations.append(f"计算金额合计{money(total)}元，与填写的合计一致。")
+    if doc.total is None:
+        issues.append("合计金额未填写或未识别到，无法与原文总额核对。")
+    return list(dict.fromkeys(issues)), calculations
+
+
+def self_check(doc, require_customer=False, require_specification=False):
+    return _check_document(doc, require_customer, require_specification)[0]
 
 
 def summarize(items, errors=(), require_customer=False, require_specification=False):
     output = ["【单据自动自查】"]
     for item in items:
         index = item.image_index
-        label = {"order": "订单", "delivery": "出货单", "unknown": "类型待确认的单据"}[item.kind]
+        label = {"order": "订单", "delivery": "出货单", "unknown": "单据（未注明订单/出货单）"}[
+            item.kind
+        ]
         doc = item.document
         position = f"第{index}张" if item.source_type == "image" else f"第{index}份文字"
         output.append(
             f"{position}：{label}｜客户：{doc.customer or '未识别'}｜单号：{doc.document_number or doc.reference_order_id or '未识别'}"
         )
-        issues = self_check(doc, require_customer, require_specification)
+        issues, calculations = _check_document(doc, require_customer, require_specification)
+        output.extend("- " + note for note in calculations)
         output.extend("- " + issue for issue in issues[:20])
         if len(issues) > 20:
             output.append(f"另有{len(issues)-20}项待核实，请先处理以上问题。")

@@ -167,3 +167,33 @@ def test_text_parser_does_not_load_ocr_and_validates_source_metadata():
     assert result.document.customer == "王记店"
     assert result.document.document_number == "A001"
     extractor.read_image.assert_not_called()
+
+
+def test_received_image_warning_survives_cache_and_prevents_unqualified_pass(bot):
+    from shipment_bot.image_read import ImageAsset
+
+    bot.image_loader.return_value = ImageAsset(Path("test.png"), "微信接收版，非已确认原图")
+    bot.handle(bot.group, msg(1, kind="图片"))
+    report = bot.handle(bot.group, msg(2, "@审单bot 审核"))
+    assert "微信接收版，非已确认原图" in report
+    assert "未发现计算差异" not in report
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "@审单bot 审核 客户朴恩，蛋液2箱，50元/箱，合计100元",
+        "@审单bot审核：朴恩蛋液2箱，每箱50元，合计100元",
+        "@审单bot 帮我看看，朴恩蛋液2箱，每箱50元",
+    ],
+)
+def test_one_line_natural_document_request(bot, text):
+    report = bot.handle(bot.group, msg(1, text))
+    assert "第1份文字" in report
+    assert "@审单bot" not in bot.extract.auto_text.call_args.args[0]
+
+
+@pytest.mark.parametrize("text", ["@其他人 审核 朴恩蛋液2箱", "引用 @审单bot 审核 朴恩蛋液2箱"])
+def test_one_line_foreign_or_quoted_request_stays_silent(bot, text):
+    assert bot.handle(bot.group, msg(1, text)) is None
+    bot.extract.auto_text.assert_not_called()

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from shipment_bot.auto_review import Recognized, summarize
 from shipment_bot.extract import ExtractionError
+from shipment_bot.image_read import ImageAsset
 from shipment_bot.models import Document
 from shipment_bot.review import compare, render
 
@@ -30,7 +31,7 @@ def automatic_request(text, nickname):
     nickname = unicodedata.normalize("NFKC", nickname).strip()
     return bool(
         re.fullmatch(
-            rf"@{re.escape(nickname)}\s+(?:请)?(?:帮我)?(?:审核|审查|审单|检查|看看|看下|看一下)"
+            rf"@{re.escape(nickname)}\s*(?:请)?(?:帮我)?(?:审核|审查|审单|检查|看看|看下|看一下)"
             r"(?:一下)?(?:这(?:张|份|些)?(?:单据|出货单|单)?|出货单|单据)?[。.!！?？]*",
             text,
         )
@@ -45,6 +46,12 @@ def inline_request(text, nickname):
             return "\n".join(lines[1:]).strip()
         if automatic_request(lines[-1], nickname):
             return "\n".join(lines[:-1]).strip()
+    # One-line requests may separate the instruction and document with spaces or punctuation.
+    normalized = unicodedata.normalize("NFKC", text).strip()
+    for separator in re.finditer(r"[\s:：,，]+", normalized):
+        prefix, body = normalized[: separator.start()], normalized[separator.end() :].strip()
+        if automatic_request(prefix, nickname) and looks_like_document(body):
+            return body
     return None
 
 
@@ -57,7 +64,7 @@ def looks_like_document(text):
     return bool(
         re.search(
             number
-            + r"[\d.一二三四五六七八九十百千万两]*\s*(?:箱|袋|件|盒|包|瓶|公斤|千克|kg|斤|吨|元)",
+            + r"[\d.一二三四五六七八九十百千万两]*\s*(?:箱|袋|件|盒|包|瓶|桶|个|支|套|公斤|千克|kg|克|g|斤|吨|毫升|ml|升|L|元|块)",
             text,
             re.I,
         )
@@ -258,8 +265,12 @@ class GroupAudit:
                     if "_audit_text" in material:
                         item = self.extract.auto_text(material["_audit_text"])
                     else:
-                        path = self.image_loader(self.group, material)
-                        item = self.extract.auto_image(path)
+                        image = self.image_loader(self.group, material)
+                        item = self.extract.auto_image(
+                            image.path if isinstance(image, ImageAsset) else image
+                        )
+                        if isinstance(image, ImageAsset) and image.warning:
+                            item.document.uncertainties.append(image.warning)
                     if len(item.document.lines) > 30:
                         raise ExtractionError("该份材料超过30行商品，请拆分为独立单据。")
                     with self.connect() as db:
@@ -312,8 +323,12 @@ class GroupAudit:
                 continue
             raw = json.loads(raw_json)
             if "image" in raw:
-                path = self.image_loader(self.group, raw["image"])
-                document = self.extract.image(path)
+                image = self.image_loader(self.group, raw["image"])
+                document = self.extract.image(
+                    image.path if isinstance(image, ImageAsset) else image
+                )
+                if isinstance(image, ImageAsset) and image.warning:
+                    document.uncertainties.append(image.warning)
             else:
                 document = self.extract.parse(raw["text"])
             if len(document.lines) > 30:

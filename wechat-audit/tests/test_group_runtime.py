@@ -136,3 +136,51 @@ def test_self_test_setting_reaches_adapter_and_own_reply_does_not_loop(
     runtime.listener.start.side_effect = start
     group_runtime.main()
     assert runtime.send.call_count == int(enabled)
+
+
+@pytest.mark.parametrize("failure", [None, PermissionError("private-path test-only")])
+def test_image_then_mention_replies_on_missing_original_or_download_failure(
+    runtime, monkeypatch, failure
+):
+    config = json.loads(runtime.config.read_text())
+    config["allow_self_test"] = True
+    runtime.config.write_text(json.dumps(config))
+    monkeypatch.setattr(sys, "argv", ["runtime", "run"])
+    media = sys.modules["wechatauto"].MediaDownloader.return_value
+    media.download_image.return_value = None
+    media.download_image.side_effect = failure
+
+    def start():
+        _, callback = runtime.listener.add_listener.call_args.args
+        callback(
+            dict(
+                local_id=1,
+                sort_seq=51,
+                type="图片",
+                sender_username="self",
+                content="[图片]",
+                shard="message_0.db",
+            ),
+            None,
+        )
+        runtime.send.assert_not_called()
+        callback(
+            dict(
+                local_id=2,
+                sort_seq=52,
+                type="文本",
+                sender_username="self",
+                content="@审单bot 审核",
+            ),
+            None,
+        )
+
+    runtime.listener.start.side_effect = start
+    group_runtime.main()
+    runtime.send.assert_called_once()
+    reply = runtime.send.call_args.args[0]
+    assert "未完成识别" in reply
+    assert ("尚未下载到电脑" if failure is None else "读取微信图片失败") in reply
+    assert "private-path" not in reply and "test-only" not in reply
+    runtime.extract.return_value.auto_image.assert_not_called()
+    media.detect_image_key.assert_not_called()

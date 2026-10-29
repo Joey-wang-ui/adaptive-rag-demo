@@ -210,3 +210,35 @@ def test_auto_image_classification_requires_visible_header_and_metadata_source()
     assert result.kind == "delivery"
     assert result.document.customer is None
     assert result.document.document_number is None
+
+
+def test_user_screenshot_missing_line_amount_is_calculated_without_mutating_evidence():
+    doc = document()
+    doc.document_number = None
+    doc.lines[0].amount = None
+    assert self_check(doc) == []
+    report = summarize([Recognized(document=doc, source_type="text")])
+    assert "计算为100.00元（计算值）" in report
+    assert "与填写的合计一致" in report
+    assert "无法核算" not in report
+    assert doc.lines[0].amount is None
+
+
+def test_missing_line_amount_still_detects_wrong_total():
+    doc = document()
+    doc.lines[0].amount = None
+    doc.total = Decimal("120")
+    report = summarize([Recognized(document=doc, source_type="text")])
+    assert "合计不符" in report and "100.00" in report and "120" in report
+    assert "未发现计算差异" not in report
+
+
+@pytest.mark.parametrize("price_unit", [None, "公斤"])
+def test_missing_line_amount_never_invents_pricing_units_or_conversion(price_unit):
+    doc = document()
+    doc.lines[0].amount = None
+    doc.lines[0].price_unit = price_unit
+    report = summarize([Recognized(document=doc)])
+    assert "无法完整核对总计" in report
+    assert "与填写的合计一致" not in report
+    assert "计算为100.00" not in report
