@@ -20,10 +20,22 @@ def self_test():
         import wechatauto  # noqa: F401
         from shipment_bot.extract import Extractor
 
+        from shipment_bot.windows_safety import GlobalEscape
+
+        hotkey = GlobalEscape()
+        try:
+            hotkey.start()
+        finally:
+            hotkey.close()
         Extractor("self-test-not-a-real-key").prepare_ocr()
         report.write_text(
             json.dumps(
-                {"ocr_loaded": True, "tk_version": tkinter.TkVersion, "transport_imported": True}
+                {
+                    "ocr_loaded": True,
+                    "tk_version": tkinter.TkVersion,
+                    "transport_imported": True,
+                    "global_esc_registered_and_released": True,
+                }
             ),
             encoding="utf-8",
         )
