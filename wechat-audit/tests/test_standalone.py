@@ -163,7 +163,7 @@ def test_local_settings_whitelist_and_forget(tmp_path):
     save(tmp_path, config, "dummy", False)
     loaded, key = load(tmp_path)
     assert not key and "api_key" not in loaded
-    assert "never-serialize" not in (tmp_path / "config.json").read_text()
+    assert "never-serialize" not in (tmp_path / "config.json").read_text(encoding="utf-8")
     assert not (tmp_path / "key.dpapi").exists()
 
 
