@@ -133,7 +133,10 @@ def main():
 
             response = quick_send(REPLY_PREFIX + "\n" + reply, config["group_name"], verify=True)
             if not response or response.get("status") != "成功":
-                print("回群未确认成功；不会自动重发。请检查微信，必要时重新发送完整材料再 @审核。", flush=True)
+                print(
+                    "回群未确认成功；不会自动重发。请检查微信，必要时重新发送完整材料再 @审核。",
+                    flush=True,
+                )
             else:
                 print("已向指定群发送本次审核结果。", flush=True)
         except Exception as error:
