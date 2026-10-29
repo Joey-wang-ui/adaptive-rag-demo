@@ -63,6 +63,11 @@ logs/
 .cursor/
 .aider*
 
+# Private WeChat shipment-review runtime, credentials and business records
+wechat-audit/.runtime/
+wechat-audit/data/
+wechat-audit/runtime-package/node_modules/
+
 # Local scratch
 *.tmp
 scratch/

@@ -1,0 +1,11 @@
+{
+  "id": "jiahui-shipment",
+  "name": "嘉惠发货前审单",
+  "description": "接收已授权的微信私聊图片，通过本机审单服务返回字段差异。",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
