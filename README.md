@@ -11,7 +11,9 @@ license: mit
 
 ## 本仓库：客服演示与微信审单试用
 
-**微信 4.2 群消息读取检查：** 双击 **`check-wechat-groups.cmd`**，在自己的 Windows 上对一个手动打开的测试群做只读实机检测；不需要 API Key。当前尚未确认兼容 4.2.0.6，未实现群单据原图获取或群自动审单。详见 [群聊检查说明](wechat-audit/GROUPS.md)。
+**指定微信群审单（实验适配器）：** 先运行 **`setup-group-audit.cmd`** 检测指定群文字读取，再运行 **`start-group-audit.cmd`** 启用该群的 @ 审核与自动回群。复用第三方微信收发底层和现有本地 OCR/DeepSeek/金额核对，不需要完整聊天机器人。首次只填群名、昵称和 API Key。完整配置与图片关联规则见 [GROUP-AUDIT.md](wechat-audit/GROUP-AUDIT.md)。**微信 4.2.0.6 尚未实测兼容。**
+
+**微信 4.2 群消息读取检查：** 双击 **`check-wechat-groups.cmd`**，在自己的 Windows 上对一个手动打开的测试群做只读实机检测；不需要 API Key。这个旧检查脚本只读取可见界面，不获取原图或自动审单，也未确认兼容 4.2.0.6。详见 [群聊检查说明](wechat-audit/GROUPS.md)。
 
 **微信私聊发货前审单（新增试运行版）：** 完整解压后双击 **`start-wechat-audit.cmd`**，自动安装固定版本 OpenClaw、腾讯官方微信插件和小型 OCR 组件，复用或隐藏输入 DeepSeek Key，检查后扫码连接微信。发送确认订单和出货单图片，机器人回复商品、规格、数量、成交价和金额差异，人工确认绑定具体版本。当前是单操作者辅助审单，不支持直接进普通微信群、分岗审批或库存联动。详见 [微信审单启动与使用说明](wechat-audit/README.md)。
 
