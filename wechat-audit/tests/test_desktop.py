@@ -6,6 +6,14 @@ import pytest
 from shipment_bot.desktop_state import Controller, save_settings
 
 
+def test_self_test_default_off_and_explicitly_saved(tmp_path):
+    config = save_settings(tmp_path, "测试群", "审单bot", "", False)
+    assert config["allow_self_test"] is False
+    config = save_settings(tmp_path, "测试群", "审单bot", "", False, allow_self_test=True)
+    assert config["allow_self_test"] is True
+    assert json.loads((tmp_path / "config.json").read_text())["allow_self_test"] is True
+
+
 def test_settings_change_invalidates_detected_binding(tmp_path):
     config = {"group_name": "测试群", "bot_nickname": "审单bot", "binding": {"group": "g@chatroom"}}
     (tmp_path / "config.json").write_text(json.dumps(config))

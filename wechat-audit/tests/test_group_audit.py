@@ -87,8 +87,28 @@ def test_materials_wait_for_at_and_reuse_parsed_result(bot):
     assert "可发送：确认" not in text
     assert bot.extract.parse.call_count == 2
     assert bot.handle(bot.group, msg(3, "@审单bot 审核 A001")) is None
-    bot.handle(bot.group, msg(4, "@审单bot 审核 A001"))
+    assert bot.handle(bot.group, msg(4, "@审单bot 审核 A001")) is None
     assert bot.extract.parse.call_count == 2
+
+
+def test_completed_labelled_case_is_skipped_after_restart_but_new_material_can_review(bot):
+    bot.handle(bot.group, msg(1, "订单 A001\n订单正文"))
+    bot.handle(bot.group, msg(2, "出货单 A001\n出货单正文"))
+    assert "无差异" in bot.handle(bot.group, msg(3, "@审单bot 审核 A001"))
+    restarted = GroupAudit(
+        bot.path,
+        bot.group,
+        bot.account,
+        bot.nickname,
+        bot.extract,
+        bot.image_loader,
+        clock=lambda: 1001,
+    )
+    assert restarted.handle(bot.group, msg(4, "@审单bot 审核 A001")) is None
+    assert bot.extract.parse.call_count == 2
+    restarted.handle(bot.group, msg(5, "出货单 A001\n新出货单正文"))
+    assert "无差异" in restarted.handle(bot.group, msg(6, "@审单bot 审核 A001"))
+    assert bot.extract.parse.call_count == 3
 
 
 def test_image_association_is_per_sender_and_invalidates_old_role(bot):
@@ -135,7 +155,11 @@ def test_difference_and_material_expiry(bot):
     bot.extract.parse.side_effect = [order, delivery]
     assert "发现差异" in bot.handle(bot.group, msg(3, "@审单bot 审核 A001"))
     bot.clock = lambda: 100000
-    assert "超过24小时" in bot.handle(bot.group, msg(4, "@审单bot 审核 A001"))
+    assert bot.handle(bot.group, msg(4, "@审单bot 审核 A001")) is None
+    bot.clock = lambda: 1001
+    bot.handle(bot.group, msg(5, "出货单 A001\n新出货单"))
+    bot.clock = lambda: 100000
+    assert "超过24小时" in bot.handle(bot.group, msg(6, "@审单bot 审核 A001"))
 
 
 def test_upstream_chinese_types_and_sender_prefix(bot):

@@ -78,9 +78,9 @@ def main():
         return
 
     root = tk.Tk()
-    root.title("嘉惠 · 微信群审单助手 v0.3 · 图文审单")
-    root.geometry("900x740")
-    root.minsize(800, 680)
+    root.title("嘉惠 · 微信群审单助手 v0.4 · 自测与防重复")
+    root.geometry("900x790")
+    root.minsize(800, 730)
     root.configure(bg="#f4f7fb")
     style = ttk.Style(root)
     style.theme_use("clam")
@@ -103,6 +103,7 @@ def main():
     nickname = tk.StringVar(value=config.get("bot_nickname", "审单bot"))
     key = tk.StringVar(value=saved_key or os.environ.get("DEEPSEEK_API_KEY", ""))
     remember = tk.BooleanVar(value=bool(saved_key))
+    allow_self_test = tk.BooleanVar(value=config.get("allow_self_test") is True)
     state = tk.StringVar(value="未启动 · 不会自动回复")
     identity = tk.StringVar(value="尚未检测账号与群，请先点击“检测连接”。")
     api_url = tk.StringVar(value=config.get("llm", {}).get("base_url", "https://api.deepseek.com"))
@@ -142,6 +143,12 @@ def main():
         body, text="记住 API Key（仅本机明文保存，请勿分享数据目录）", variable=remember
     )
     remember_box.pack(anchor="w", pady=(6, 12))
+    self_test_box = ttk.Checkbutton(
+        body,
+        text="允许自己触发测试（默认关闭；仅指定群，手动输入 @群昵称 审核）",
+        variable=allow_self_test,
+    )
+    self_test_box.pack(anchor="w", pady=(0, 12))
 
     def append(text):
         for secret in (key.get().strip(), saved_key, os.environ.get("DEEPSEEK_API_KEY", "")):
@@ -159,6 +166,7 @@ def main():
             nickname.get(),
             key.get(),
             remember.get(),
+            allow_self_test=allow_self_test.get(),
             llm={"base_url": api_url.get(), "model": model_name.get()},
             audit={
                 "instructions": instructions,
@@ -323,7 +331,14 @@ def main():
                 f"账号：{status['account']}    群：{status.get('name', '')} ({status.get('group', '')})"
             )
         busy = controller.busy
-        for widget in [*entries, remember_box, check_button, start_button, settings_button]:
+        for widget in [
+            *entries,
+            remember_box,
+            self_test_box,
+            check_button,
+            start_button,
+            settings_button,
+        ]:
             widget.configure(state="disabled" if busy else "normal")
         stop_button.configure(state="normal" if busy and not controller.stopping else "disabled")
         if closing and not busy:

@@ -16,7 +16,9 @@ def data_directory():
     return Path(__file__).resolve().parents[1] / "data/group-audit"
 
 
-def save_settings(directory, group, nickname, key, remember, llm=None, audit=None):
+def save_settings(
+    directory, group, nickname, key, remember, llm=None, audit=None, allow_self_test=False
+):
     group, nickname = group.strip(), nickname.strip()
     if not group or not nickname or any("\n" in x or "\r" in x for x in (group, nickname)):
         raise ValueError("请填写完整的群名和群昵称，不能包含换行。")
@@ -46,6 +48,7 @@ def save_settings(directory, group, nickname, key, remember, llm=None, audit=Non
     if (config.get("group_name"), config.get("bot_nickname")) != (group, nickname):
         config.pop("binding", None)
     config.update(group_name=group, bot_nickname=nickname)
+    config["allow_self_test"] = bool(allow_self_test)
     if llm is not None:
         config["llm"] = {"base_url": llm["base_url"].strip(), "model": llm["model"].strip()}
     if audit is not None:

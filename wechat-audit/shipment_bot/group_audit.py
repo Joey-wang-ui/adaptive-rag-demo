@@ -15,6 +15,7 @@ from shipment_bot.models import Document
 from shipment_bot.review import compare, render
 
 CASE = r"[A-Za-z0-9_-]{1,40}"
+REPLY_PREFIX = "【嘉惠审单助手回复】"
 
 
 def command(text, nickname):
@@ -89,17 +90,20 @@ class GroupAudit:
         image_loader,
         clock=time.time,
         audit_options=None,
+        allow_self_test=False,
     ):
         if not group.endswith("@chatroom") or not account or not nickname.strip():
             raise ValueError("必须绑定真实群 ID、当前账号和机器人群昵称。")
         self.group, self.account, self.nickname = group, account, nickname
         self.extract, self.image_loader, self.clock = extract, image_loader, clock
         self.audit_options = audit_options or {}
+        self.allow_self_test = allow_self_test
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS seen(id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS completed_cases(code TEXT PRIMARY KEY, fingerprint TEXT);
                 CREATE TABLE IF NOT EXISTS pending(sender TEXT PRIMARY KEY, code TEXT, role TEXT, at REAL);
                 CREATE TABLE IF NOT EXISTS materials(code TEXT, role TEXT, raw TEXT, parsed TEXT, at REAL,
                     PRIMARY KEY(code,role));
@@ -122,7 +126,9 @@ class GroupAudit:
 
     def handle(self, group, msg):
         sender = str(msg.get("sender_username") or "")
-        if group != self.group or not sender or sender == self.account:
+        if group != self.group or not sender:
+            return None
+        if sender == self.account and not self.allow_self_test:
             return None
         if not msg.get("local_id") or not msg.get("sort_seq"):
             return None
@@ -143,6 +149,9 @@ class GroupAudit:
                 text = text[len(prefix) :]
                 break
         kind = {"文本": "text", "图片": "image"}.get(msg.get("type"), msg.get("type"))
+        # Replies are never documents or commands, even in self-test mode.
+        if kind == "text" and text.startswith(REPLY_PREFIX):
+            return None
         code = command(text, self.nickname) if kind == "text" else None
         if code:
             try:
@@ -217,24 +226,28 @@ class GroupAudit:
     def auto_audit(self, sender):
         with self.connect() as db:
             batches = db.execute(
-                "SELECT sender,batch,overflow FROM auto_batches WHERE at>=?", (self.clock() - 600,)
+                "SELECT sender,batch,overflow,reviewed FROM auto_batches WHERE at>=?",
+                (self.clock() - 600,),
             ).fetchall()
             own = [row for row in batches if row[0] == sender]
-            selected = own or batches
+            if own and own[0][3]:
+                return None
+            selected = own or [row for row in batches if not row[3]]
+            if not selected and batches:
+                return None
             if len(selected) != 1:
                 return (
                     "没有可审核的近期材料，请先发订单文字或单据图片再 @我 审核；也可在同一条消息首行写 @我 审核，下面粘贴正文。"
                     if not selected
                     else "近期有多人发材料，无法确定审核哪一单。请由发材料的人本人 @我 审核，避免串单。"
                 )
-            owner, batch, overflow = selected[0]
+            owner, batch, overflow, _reviewed = selected[0]
             if overflow:
                 db.execute("UPDATE auto_batches SET reviewed=1 WHERE sender=?", (owner,))
                 return "这批超过4份材料，未开始审核。请分成最多4份（文字和图片合计）一批重新发送，再 @我 审核。"
             rows = db.execute(
                 "SELECT id,raw,parsed FROM auto_photos WHERE batch=? ORDER BY rowid", (batch,)
             ).fetchall()
-            db.execute("UPDATE auto_batches SET reviewed=1 WHERE sender=?", (owner,))
         items, errors = [], []
         for i, (identity, raw, parsed) in enumerate(rows, 1):
             try:
@@ -258,12 +271,16 @@ class GroupAudit:
                 items.append(item)
             except ExtractionError as error:
                 errors.append(f"第{i}份材料未完成识别：{error}")
-        return summarize(
+        report = summarize(
             items,
             errors,
             bool(self.audit_options.get("require_customer", False)),
             bool(self.audit_options.get("require_specification", False)),
         )
+        if not errors:
+            with self.connect() as db:
+                db.execute("UPDATE auto_batches SET reviewed=1 WHERE batch=?", (batch,))
+        return report
 
     def save(self, db, code, role, raw):
         db.execute(
@@ -278,6 +295,14 @@ class GroupAudit:
             ).fetchall()
         if len(rows) != 2:
             return f"{code} 材料不足。请分别发送“订单 {code}”＋图片、“出货单 {code}”＋图片，再 @我 审核 {code}。"
+        fingerprint = hashlib.sha256(
+            json.dumps(sorted((row[0], row[1], row[3]) for row in rows)).encode()
+        ).hexdigest()
+        with self.connect() as db:
+            if db.execute(
+                "SELECT 1 FROM completed_cases WHERE code=? AND fingerprint=?", (code, fingerprint)
+            ).fetchone():
+                return None
         documents = {}
         for role, raw_json, parsed, at in rows:
             if self.clock() - at > 86400:
@@ -301,6 +326,8 @@ class GroupAudit:
                 )
         result = compare(documents["order"], documents["delivery"])
         report = render(code, int(max(row[3] for row in rows)), result)
+        with self.connect() as db:
+            db.execute("INSERT OR REPLACE INTO completed_cases VALUES (?,?)", (code, fingerprint))
         # The group adapter does not implement or accept approval commands.
         return "\n".join(
             line

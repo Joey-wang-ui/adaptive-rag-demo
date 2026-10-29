@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 from shipment_bot import group_runtime
+from shipment_bot.group_audit import REPLY_PREFIX
 
 
 @pytest.fixture
@@ -106,3 +107,32 @@ def test_wrong_binding_stops_before_api_or_listener(runtime, monkeypatch):
     runtime.extract.assert_not_called()
     runtime.factory.assert_not_called()
     runtime.send.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_self_test_setting_reaches_adapter_and_own_reply_does_not_loop(
+    runtime, monkeypatch, enabled
+):
+    config = json.loads(runtime.config.read_text())
+    config["allow_self_test"] = enabled
+    runtime.config.write_text(json.dumps(config))
+    monkeypatch.setattr(sys, "argv", ["runtime", "run"])
+
+    def start():
+        group, callback = runtime.listener.add_listener.call_args.args
+        request = dict(
+            local_id=1,
+            sort_seq=51,
+            type="文本",
+            sender_username="self",
+            content="@审单bot 审核 A001",
+        )
+        callback(request, None)
+        if enabled:
+            reply = runtime.send.call_args.args[0]
+            assert reply.startswith(REPLY_PREFIX)
+            callback({**request, "local_id": 2, "sort_seq": 52, "content": reply}, None)
+
+    runtime.listener.start.side_effect = start
+    group_runtime.main()
+    assert runtime.send.call_count == int(enabled)

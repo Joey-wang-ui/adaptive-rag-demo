@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 from shipment_bot.auto_review import Recognized
 from shipment_bot.extract import Extractor
-from shipment_bot.group_audit import GroupAudit, inline_request, looks_like_document
+from shipment_bot.group_audit import REPLY_PREFIX, GroupAudit, inline_request, looks_like_document
 from shipment_bot.models import Document, Line
 
 
@@ -78,8 +78,59 @@ def test_plain_text_review_waits_for_at_and_reuses_cache(bot):
     result = bot.handle(bot.group, msg(2, "@审单bot 审核"))
     assert "第1份文字" in result
     bot.image_loader.assert_not_called()
-    bot.handle(bot.group, msg(3, "@审单bot 审核"))
+    assert bot.handle(bot.group, msg(3, "@审单bot 审核")) is None
     assert bot.extract.auto_text.call_count == 1
+
+
+def test_self_test_is_opt_in_and_only_in_selected_group(bot):
+    body = "@审单bot 审核\n王记店 蛋液2箱 每箱50元 金额100元"
+    assert bot.handle(bot.group, msg(1, body, sender="self")) is None
+    bot.extract.auto_text.assert_not_called()
+    bot.allow_self_test = True
+    assert bot.handle("private", msg(2, body, sender="self")) is None
+    assert bot.handle("other@chatroom", msg(3, body, sender="self")) is None
+    result = bot.handle(bot.group, msg(4, body, sender="self"))
+    assert "第1份文字" in result
+    assert bot.handle(bot.group, msg(5, "@审单bot 审核", sender="self")) is None
+    assert bot.extract.auto_text.call_count == 1
+
+
+def test_self_test_image_then_command_and_reply_cannot_become_material(bot):
+    bot.allow_self_test = True
+    bot.handle(bot.group, msg(1, kind="image", sender="self"))
+    bot.extract.auto_image.assert_not_called()
+    result = bot.handle(bot.group, msg(2, "@审单bot 审核", sender="self"))
+    assert "第1张" in result
+    echo = "self:\n" + REPLY_PREFIX + "\n" + result + "\n@审单bot 审核"
+    assert bot.handle(bot.group, msg(3, echo, sender="self")) is None
+    assert bot.handle(bot.group, msg(4, "@审单bot 审核", sender="self")) is None
+    assert bot.extract.auto_image.call_count == 1
+    bot.handle(bot.group, msg(5, "王记店 蛋液2箱 每箱50元", sender="self"))
+    assert "第1份文字" in bot.handle(bot.group, msg(6, "@审单bot 审核", sender="self"))
+    assert bot.extract.auto_text.call_count == 1
+
+
+def test_completed_own_batch_does_not_fall_back_to_other_member(bot):
+    bot.handle(bot.group, msg(1, "王记店 蛋液2箱", sender="member"))
+    bot.handle(bot.group, msg(2, "@审单bot 审核", sender="member"))
+    bot.handle(bot.group, msg(3, "王记店 蛋液2箱", sender="other"))
+    assert bot.handle(bot.group, msg(4, "@审单bot 审核", sender="member")) is None
+    assert bot.extract.auto_text.call_count == 1
+    assert "第1份文字" in bot.handle(bot.group, msg(5, "@审单bot 审核", sender="other"))
+
+
+def test_failed_material_can_retry_but_completed_batch_stays_silent(bot):
+    from shipment_bot.extract import ExtractionError
+
+    bot.handle(bot.group, msg(1, "王记店 蛋液2箱"))
+    bot.handle(bot.group, msg(2, kind="image"))
+    bot.image_loader.side_effect = ExtractionError("请打开原图")
+    assert "未完成识别" in bot.handle(bot.group, msg(3, "@审单bot 审核"))
+    bot.image_loader.side_effect = None
+    assert "第2张" in bot.handle(bot.group, msg(4, "@审单bot 审核"))
+    assert bot.extract.auto_text.call_count == 1
+    assert bot.extract.auto_image.call_count == 1
+    assert bot.handle(bot.group, msg(5, "@审单bot 审核")) is None
 
 
 def test_mixed_order_text_and_delivery_image_can_be_compared(bot):

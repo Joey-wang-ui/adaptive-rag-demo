@@ -133,8 +133,11 @@ def test_other_sender_only_when_unique_and_ambiguous_batches_refused(bot):
     bot.handle(bot.group, message(1, kind="image", sender="a"))
     assert "单据自动自查" in bot.handle(bot.group, message(2, "@审单bot 审核", sender="boss"))
     bot.handle(bot.group, message(3, kind="image", sender="b"))
-    assert "多人发材料" in bot.handle(bot.group, message(4, "@审单bot 审核", sender="boss"))
-    assert "单据自动自查" in bot.handle(bot.group, message(5, "@审单bot 审核", sender="b"))
+    assert "单据自动自查" in bot.handle(bot.group, message(4, "@审单bot 审核", sender="boss"))
+    assert bot.handle(bot.group, message(5, "@审单bot 审核", sender="b")) is None
+    bot.handle(bot.group, message(6, kind="image", sender="b"))
+    bot.handle(bot.group, message(7, kind="image", sender="c"))
+    assert "多人发材料" in bot.handle(bot.group, message(8, "@审单bot 审核", sender="boss"))
 
 
 def test_overflow_does_not_silently_ignore_extra_pages(bot):

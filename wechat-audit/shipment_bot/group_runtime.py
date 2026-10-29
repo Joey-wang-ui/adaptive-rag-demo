@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from shipment_bot.extract import ExtractionError, Extractor, validate_image
-from shipment_bot.group_audit import GroupAudit, resolve_group
+from shipment_bot.group_audit import REPLY_PREFIX, GroupAudit, resolve_group
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.environ.get("JIAHUI_AUDIT_DATA_DIR", ROOT / "data/group-audit"))
@@ -118,6 +118,7 @@ def main():
         extractor,
         image_loader,
         audit_options=audit_options,
+        allow_self_test=config.get("allow_self_test") is True,
     )
 
     def on_message(message, _listener):
@@ -130,9 +131,9 @@ def main():
                 raise RuntimeError("群身份已变化，取消发送。")
             from wechatauto.guia import quick_send
 
-            response = quick_send(reply, config["group_name"], verify=True)
+            response = quick_send(REPLY_PREFIX + "\n" + reply, config["group_name"], verify=True)
             if not response or response.get("status") != "成功":
-                print("回群未确认成功；不会自动重发。请检查微信，必要时重新 @审核。", flush=True)
+                print("回群未确认成功；不会自动重发。请检查微信，必要时重新发送完整材料再 @审核。", flush=True)
             else:
                 print("已向指定群发送本次审核结果。", flush=True)
         except Exception as error:
@@ -145,6 +146,10 @@ def main():
     listener = Listener(db, interval=1.0, watermark_file="", max_retries=0)
     listener.add_listener(group, on_message)
     listener.start()
+    if config.get("allow_self_test") is True:
+        print(
+            "自己触发测试已开启：可在指定群手动输入 @群昵称 审核；测试后请关闭此选项。", flush=True
+        )
     publish_state("running", account=account, group=group, name=config["group_name"])
     print("已启用指定群审单。发订单文字或单据图片后 @昵称 审核 即可；Ctrl+C 停止。", flush=True)
     try:
