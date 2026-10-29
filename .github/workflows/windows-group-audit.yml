@@ -1,0 +1,43 @@
+name: Build Windows group audit desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-group-audit.yml'
+      - 'wechat-audit/desktop.py'
+      - 'wechat-audit/build_desktop.py'
+      - 'wechat-audit/desktop-build-requirements.txt'
+      - 'wechat-audit/shipment_bot/desktop_state.py'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build and runtime dependencies
+        run: python -m pip install -r wechat-audit/desktop-build-requirements.txt
+      - name: Build desktop application
+        run: python wechat-audit/build_desktop.py
+      - name: Check packaged OCR and imports without WeChat or API
+        shell: pwsh
+        run: |
+          $env:JIAHUI_SELF_TEST_REPORT = "$env:RUNNER_TEMP\group-audit-self-test.json"
+          $process = Start-Process -FilePath "dist\JiahuiGroupAudit\JiahuiGroupAudit.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if (Test-Path $env:JIAHUI_SELF_TEST_REPORT) { Get-Content $env:JIAHUI_SELF_TEST_REPORT }
+          if ($process.ExitCode -ne 0) { throw "Packaged runtime self-test failed" }
+          if (!(Test-Path $env:JIAHUI_SELF_TEST_REPORT)) { throw "Packaged self-test produced no report" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JiahuiGroupAudit-Windows
+          path: dist/JiahuiGroupAudit/
+          retention-days: 14
+          if-no-files-found: error

@@ -12,8 +12,19 @@ from shipment_bot.extract import ExtractionError, Extractor, validate_image
 from shipment_bot.group_audit import GroupAudit, resolve_group
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data/group-audit"
+DATA = Path(os.environ.get("JIAHUI_AUDIT_DATA_DIR", ROOT / "data/group-audit"))
 CONFIG = DATA / "config.json"
+
+
+def publish_state(state, **fields):
+    path = os.environ.get("JIAHUI_AUDIT_STATUS")
+    if path:
+        target = Path(path)
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps({"state": state, **fields}, ensure_ascii=False), encoding="utf-8"
+        )
+        temporary.replace(target)
 
 
 def main():
@@ -22,6 +33,8 @@ def main():
     DATA.mkdir(parents=True, exist_ok=True)
     config = json.loads(CONFIG.read_text(encoding="utf-8")) if CONFIG.exists() else {}
     if not config.get("group_name"):
+        if os.environ.get("JIAHUI_AUDIT_NO_PROMPT"):
+            raise RuntimeError("请先在软件界面保存群名和昵称。")
         config["group_name"] = input("只监听的群名（必须唯一）：").strip()
         config["bot_nickname"] = input("机器人在这个群的昵称：").strip()
         if not all(config.values()):
@@ -45,6 +58,7 @@ def main():
         config["binding"] = binding
         CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
         print("群文字读取检测通过；没有发送消息、没有调用模型。图片获取及回群仍待实测。")
+        publish_state("checked", account=account, group=group, name=config["group_name"])
         return
     if config.get("binding") != binding:
         raise RuntimeError("账号或群与检测记录不符。请先运行 setup-group-audit.cmd 重新检测。")
@@ -53,6 +67,8 @@ def main():
     if not key and key_file.exists():
         key = key_file.read_text(encoding="utf-8").strip()
     if not key:
+        if os.environ.get("JIAHUI_AUDIT_NO_PROMPT"):
+            raise RuntimeError("请在软件界面填写 API Key。")
         print("Key 仅保存在本机 wechat-audit/data/group-audit/api-key.txt；不要分享此文件夹。")
         key = getpass.getpass("DeepSeek API Key（输入不显示）：").strip()
         if not key:
@@ -121,8 +137,9 @@ def main():
     # A fresh watermark seeds at latest message: no offline backlog replay.
     listener = Listener(db, interval=1.0, watermark_file="", max_retries=0)
     listener.add_listener(group, on_message)
-    print("已启用指定群审单。只有 @昵称 审核 编号 才回复；Ctrl+C 停止。", flush=True)
     listener.start()
+    publish_state("running", account=account, group=group, name=config["group_name"])
+    print("已启用指定群审单。只有 @昵称 审核 编号 才回复；Ctrl+C 停止。", flush=True)
     try:
         while True:
             time.sleep(1)
