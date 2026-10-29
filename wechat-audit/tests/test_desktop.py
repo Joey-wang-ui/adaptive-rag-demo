@@ -11,7 +11,10 @@ def test_self_test_default_off_and_explicitly_saved(tmp_path):
     assert config["allow_self_test"] is False
     config = save_settings(tmp_path, "测试群", "审单bot", "", False, allow_self_test=True)
     assert config["allow_self_test"] is True
-    assert json.loads((tmp_path / "config.json").read_text())["allow_self_test"] is True
+    assert (
+        json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["allow_self_test"]
+        is True
+    )
 
 
 def test_settings_change_invalidates_detected_binding(tmp_path):
@@ -19,7 +22,7 @@ def test_settings_change_invalidates_detected_binding(tmp_path):
     (tmp_path / "config.json").write_text(json.dumps(config))
     same = save_settings(tmp_path, "测试群", "审单bot", "dummy-key", True)
     assert same["binding"] == config["binding"]
-    assert (tmp_path / "api-key.txt").read_text() == "dummy-key"
+    assert (tmp_path / "api-key.txt").read_text(encoding="utf-8") == "dummy-key"
     changed = save_settings(tmp_path, "另一个群", "审单bot", "dummy-key", False)
     assert "binding" not in changed
     assert not (tmp_path / "api-key.txt").exists()
@@ -75,7 +78,7 @@ if state == "running": time.sleep(30)
         time.sleep(0.02)
     assert controller.state == "checked"
     assert "worker ready" in output
-    config = json.loads((tmp_path / "config.json").read_text())
+    config = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     config["binding"] = {"group": "g@chatroom", "account": "self"}
     (tmp_path / "config.json").write_text(json.dumps(config))
     controller.start("run", "dummy")
@@ -131,7 +134,7 @@ def test_switch_provider_removes_old_key_and_persists_preferences(tmp_path):
         llm=config["llm"],
         audit=config["audit"],
     )
-    assert (tmp_path / "api-key.txt").read_text() == "new-provider-key"
+    assert (tmp_path / "api-key.txt").read_text(encoding="utf-8") == "new-provider-key"
 
 
 class FakeEscape:
@@ -150,7 +153,7 @@ class FakeEscape:
 
 def prepared_controller(tmp_path, **kwargs):
     save_settings(tmp_path, "测试群", "审单bot", "", False, allow_self_test=True)
-    config = json.loads((tmp_path / "config.json").read_text())
+    config = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     config["binding"] = {"group": "g@chatroom", "account": "self"}
     (tmp_path / "config.json").write_text(json.dumps(config))
     return Controller(tmp_path, tmp_path, **kwargs)

@@ -37,7 +37,7 @@ jobs:
         id: desktop_tests
         shell: pwsh
         run: |
-          python -m pip install pytest==8.4.2
+          python -m pip install pytest==8.4.2 pytest-asyncio==0.26.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:JIAHUI_CI_FAILURE_REPORT = "$env:RUNNER_TEMP\desktop-failures.jsonl"
           cmd /c "python -m pytest -q wechat-audit/tests > desktop-tests.log 2>&1"
