@@ -13,7 +13,7 @@ VENV = ROOT / ".group-audit-venv"
 
 def main():
     if os.name != "nt":
-        raise RuntimeError("Requires Windows with desktop WeChat logged in.")
+        raise RuntimeError("Requires Windows. Local window review does not need WeChat.")
     python = VENV / "Scripts/python.exe"
     marker = VENV / "requirements.sha256"
     fingerprint = hashlib.sha256(
@@ -37,8 +37,13 @@ def main():
             stderr=sys.stderr,
         )
         marker.write_text(fingerprint)
+    if sys.argv[1:] == ["desktop"]:
+        return subprocess.call([str(python), str(ROOT / "desktop.py")], cwd=ROOT)
+    module = (
+        "shipment_bot.local_review" if sys.argv[1:] == ["local"] else "shipment_bot.group_runtime"
+    )
     return subprocess.call(
-        [str(python), "-m", "shipment_bot.group_runtime", *sys.argv[1:]],
+        [str(python), "-m", module, *([] if module.endswith("local_review") else sys.argv[1:])],
         cwd=ROOT,
         stdout=sys.stdout,
         stderr=sys.stderr,

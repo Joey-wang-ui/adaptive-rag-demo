@@ -82,11 +82,33 @@ def self_test():
             recognized, _ = extractor.read_image(sample)
             if "120" not in recognized or "TOTAL" not in recognized.upper():
                 raise RuntimeError("Bundled OCR did not recognize the decoded synthetic image")
+            # Run the local-file route with real OCR and an in-memory API transport.
+            import httpx
+            from shipment_bot.local_review import review_request
+
+            def synthetic_api(request):
+                document = {
+                    "total": "120",
+                    "lines": [{"name": "TOTAL", "amount": "120", "evidence": recognized}],
+                }
+                return httpx.Response(
+                    200, json={"choices": [{"message": {"content": json.dumps(document)}}]}
+                )
+
+            def local_factory(key, **kwargs):
+                return Extractor(key, transport=httpx.MockTransport(synthetic_api), **kwargs)
+
+            local_result = review_request(
+                {"images": [str(sample)]}, {}, "self-test-only", factory=local_factory
+            )
+            if "第1张" not in local_result or "TOTAL" not in local_result:
+                raise RuntimeError("Bundled local window review did not produce an image report")
         report.write_text(
             json.dumps(
                 {
                     "ocr_loaded": True,
                     "audit_skill_loaded": True,
+                    "local_file_review": True,
                     "ocr_image_recognized": True,
                     "synthetic_v2_decrypted": True,
                     "wxgf_hevc_decoded": True,
@@ -111,10 +133,15 @@ def worker(mode):
     with path.open("a", encoding="utf-8", buffering=1) as stream:
         sys.stdout = sys.stderr = stream
         try:
-            from shipment_bot import group_runtime
+            if mode == "local":
+                from shipment_bot import local_review
 
-            sys.argv = [sys.argv[0], mode]
-            group_runtime.main()
+                local_review.main()
+            else:
+                from shipment_bot import group_runtime
+
+                sys.argv = [sys.argv[0], mode]
+                group_runtime.main()
             return 0
         except Exception as error:
             # Avoid traceback-local dumps and never log the configured API credential.
@@ -131,7 +158,7 @@ def main():
     from tkinter import messagebox, scrolledtext, ttk
 
     if os.name != "nt":
-        raise RuntimeError("桌面版需要 Windows 和已登录的电脑版微信。")
+        raise RuntimeError("桌面版需要 Windows；窗口审核无需微信，群审单另需登录电脑版微信。")
     directory = data_directory()
     directory.mkdir(parents=True, exist_ok=True)
     import msvcrt
@@ -148,7 +175,7 @@ def main():
         return
 
     root = tk.Tk()
-    root.title("嘉惠 · 微信群审单助手 v0.8 · 自然审单技能")
+    root.title("嘉惠 · 微信群审单助手 v0.9 · 窗口审核")
     root.geometry("900x790")
     root.minsize(800, 730)
     root.configure(bg="#f4f7fb")
@@ -162,6 +189,7 @@ def main():
     style.configure("TEntry", padding=7, font=("Microsoft YaHei UI", 10))
     controller = Controller(directory, ROOT)
     closing = False
+    review_window = None
     config_path = directory / "config.json"
     try:
         config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
@@ -232,7 +260,7 @@ def main():
         log.see("end")
         log.configure(state="disabled")
 
-    def save():
+    def save(local=False):
         return save_settings(
             directory,
             group.get(),
@@ -240,6 +268,7 @@ def main():
             key.get(),
             remember.get(),
             allow_self_test=allow_self_test.get(),
+            require_group=not local,
             llm={"base_url": api_url.get(), "model": model_name.get()},
             audit={
                 "instructions": instructions,
@@ -349,7 +378,7 @@ def main():
                 key.set("")
                 remember.set(False)
             try:
-                save()
+                save(local=True)
             except (ValueError, OSError) as error:
                 api_url.set(old[0])
                 model_name.set(old[1])
@@ -389,6 +418,26 @@ def main():
         except OSError as error:
             messagebox.showerror("急停未完成", str(error), parent=root)
 
+    def open_review():
+        nonlocal review_window
+        from shipment_bot.local_window import LocalReviewWindow
+
+        if review_window is not None and review_window.window.winfo_exists():
+            review_window.window.deiconify()
+            review_window.window.lift()
+            return
+        review_window = LocalReviewWindow(
+            root, controller, directory, lambda: save(local=True), key.get
+        )
+
+    manual = ttk.Frame(body)
+    manual.pack(fill="x", pady=(0, 10))
+    ttk.Button(
+        manual, text="窗口审核 · 选图片 / 粘贴截图", style="Accent.TButton", command=open_review
+    ).pack(side="left")
+    ttk.Label(manual, text="无需微信连接，结果显示在窗口，不自动回群。", foreground="#547080").pack(
+        side="left", padx=10
+    )
     controls = ttk.Frame(body)
     controls.pack(fill="x", pady=(0, 10))
     check_button = ttk.Button(controls, text="1  检测连接", command=lambda: launch("check"))
@@ -455,12 +504,21 @@ def main():
             "stopping": "正在停止…",
             "stopped": "已急停 · 自动操作已终止；需手动点击启动审单",
             "error": "未能完成 · 请查看日志",
+            "reviewed": "窗口审核已结束 · 请查看审核结果",
         }
+        if controller.mode == "local":
+            labels.update(
+                starting="正在准备窗口审核…",
+                running="窗口审核进行中 · 不访问微信、不回群",
+                stopped="窗口审核已停止 · 不会自动恢复",
+            )
         state.set(labels[controller.state])
         if status.get("account"):
             identity.set(
                 f"账号：{status['account']}    群：{status.get('name', '')} ({status.get('group', '')})"
             )
+        if review_window is not None and review_window.window.winfo_exists():
+            review_window.refresh(status)
         busy = controller.busy
         for widget in [
             *entries,

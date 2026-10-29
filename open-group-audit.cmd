@@ -6,4 +6,5 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-start "" pyw -3.12 "%~dp0wechat-audit\desktop.py"
+py -3.12 "%~dp0wechat-audit\group_launch.py" desktop
+if errorlevel 1 pause

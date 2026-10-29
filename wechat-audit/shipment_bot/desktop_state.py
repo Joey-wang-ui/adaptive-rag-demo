@@ -18,10 +18,20 @@ def data_directory():
 
 
 def save_settings(
-    directory, group, nickname, key, remember, llm=None, audit=None, allow_self_test=False
+    directory,
+    group,
+    nickname,
+    key,
+    remember,
+    llm=None,
+    audit=None,
+    allow_self_test=False,
+    require_group=True,
 ):
     group, nickname = group.strip(), nickname.strip()
-    if not group or not nickname or any("\n" in x or "\r" in x for x in (group, nickname)):
+    if (require_group and (not group or not nickname)) or any(
+        "\n" in x or "\r" in x for x in (group, nickname)
+    ):
         raise ValueError("请填写完整的群名和群昵称，不能包含换行。")
     if llm is not None:
         url = urlsplit(llm["base_url"].strip())
@@ -87,16 +97,24 @@ class Controller:
     def busy(self):
         return self.process is not None
 
-    def start(self, mode, key=""):
+    def start(self, mode, key="", review=None):
         if self.busy:
             raise ValueError("已有检测或审单任务正在运行，请先停止。")
-        if mode not in {"check", "run"}:
+        if mode not in {"check", "run", "local"}:
             raise ValueError("未知运行模式。")
         config = json.loads((self.directory / "config.json").read_text(encoding="utf-8"))
         if mode == "run" and not config.get("binding"):
             raise ValueError("请先点击“检测连接”，检查显示的账号和群是否正确。")
-        if mode == "run" and not key.strip() and not (self.directory / "api-key.txt").exists():
+        if (
+            mode in {"run", "local"}
+            and not key.strip()
+            and not (self.directory / "api-key.txt").exists()
+        ):
             raise ValueError("请填写模型 API Key。")
+        if mode == "local":
+            from shipment_bot.local_review import validate_request
+
+            validate_request(review or {})
         logs = self.directory / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         token = uuid.uuid4().hex
@@ -117,6 +135,10 @@ class Controller:
             PYTHONUNBUFFERED="1",
             PYINSTALLER_RESET_ENVIRONMENT="1",
         )
+        if mode == "local":
+            request_path = logs / (token + ".request.json")
+            request_path.write_text(json.dumps(review, ensure_ascii=False), encoding="utf-8")
+            env["JIAHUI_LOCAL_REQUEST"] = str(request_path)
         interpreter = sys.executable
         if Path(interpreter).name.lower() == "pythonw.exe":
             interpreter = str(Path(interpreter).with_name("python.exe"))
@@ -217,6 +239,8 @@ class Controller:
                     if self.stopping
                     else "checked"
                     if self.mode == "check" and code == 0 and status.get("state") == "checked"
+                    else "reviewed"
+                    if self.mode == "local" and code == 0 and status.get("state") == "reviewed"
                     else "error"
                 )
                 self.process = None
