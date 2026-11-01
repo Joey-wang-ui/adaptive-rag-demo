@@ -34,6 +34,7 @@ def main():
         "win32timezone",
     ]
     for package in [
+        "PIL",
         "rapidocr_onnxruntime",
         "onnxruntime",
         "cv2",

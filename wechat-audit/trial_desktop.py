@@ -566,4 +566,28 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as error:
+        if any(flag in sys.argv for flag in ("--self-test", "--sdk-import-test")):
+            import traceback
+
+            report = os.environ.get("JIAHUI_SELF_TEST_REPORT")
+            if report:
+                Path(report).write_text(
+                    json.dumps(
+                        {
+                            "error_type": type(error).__name__,
+                            "missing_module": getattr(error, "name", None)
+                            if isinstance(error, ImportError)
+                            else None,
+                            "frames": [
+                                f"{Path(f.filename).name}:{f.lineno} {f.name}"
+                                for f in traceback.extract_tb(error.__traceback__)
+                            ],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            raise SystemExit(1) from None
+        raise

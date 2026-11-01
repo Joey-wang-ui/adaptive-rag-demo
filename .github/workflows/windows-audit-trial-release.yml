@@ -5,13 +5,28 @@ on:
     tags: ['jiahui-trial-*']
   workflow_dispatch:
 
+concurrency:
+  group: jiahui-windows-trial-release
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
+      - name: Stop superseded trial builds
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow windows-audit-trial-release.yml --status in_progress --json databaseId --jq ".[] | select(.databaseId < $GITHUB_RUN_ID) | .databaseId" | while read -r old_run; do
+            gh run cancel "$old_run" --repo "$GITHUB_REPOSITORY"
+          done
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --frozen --extra dev
@@ -39,7 +54,12 @@ jobs:
         shell: pwsh
         run: |
           $env:JIAHUI_SELF_TEST_REPORT = "$env:RUNNER_TEMP\trial-self-test.json"
-          $process = Start-Process -FilePath "dist\JiahuiAuditTrial\JiahuiAuditTrial.exe" -ArgumentList "--self-test" -Wait -PassThru
+          $process = Start-Process -FilePath "dist\JiahuiAuditTrial\JiahuiAuditTrial.exe" -ArgumentList "--self-test" -PassThru
+          if (!$process.WaitForExit(120000)) {
+            taskkill /PID $process.Id /T /F
+            throw "Packaged trial self-test exceeded 120 seconds"
+          }
+          $process.Refresh()
           if ($process.ExitCode -ne 0) { throw "Packaged trial self-test failed" }
           if (!(Test-Path $env:JIAHUI_SELF_TEST_REPORT)) { throw "Missing self-test report" }
           Get-Content $env:JIAHUI_SELF_TEST_REPORT
@@ -51,10 +71,26 @@ jobs:
           python -c "import os; from pathlib import Path; from shipment_bot.wechat.wxauto4_download import download_bundle; download_bundle(Path(os.environ['RUNNER_TEMP']) / 'sdk-reviewed')"
           $env:JIAHUI_SELF_TEST_REPORT = "$env:RUNNER_TEMP\sdk-import-test.json"
           $arguments = @('--sdk-import-test', "`"$env:RUNNER_TEMP\sdk-reviewed`"")
-          $process = Start-Process -FilePath "dist\JiahuiAuditTrial\JiahuiAuditTrial.exe" -ArgumentList $arguments -Wait -PassThru
+          $process = Start-Process -FilePath "dist\JiahuiAuditTrial\JiahuiAuditTrial.exe" -ArgumentList $arguments -PassThru
+          if (!$process.WaitForExit(120000)) {
+            taskkill /PID $process.Id /T /F
+            throw "Packaged SDK import exceeded 120 seconds"
+          }
+          $process.Refresh()
           if ($process.ExitCode -ne 0) { throw "Packaged SDK import test failed" }
           if (!(Test-Path $env:JIAHUI_SELF_TEST_REPORT)) { throw "Missing SDK import report" }
           Get-Content $env:JIAHUI_SELF_TEST_REPORT
+      - name: Record packaged self-test evidence
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($name in @('trial-self-test.json', 'sdk-import-test.json')) {
+            $path = Join-Path $env:RUNNER_TEMP $name
+            if (Test-Path $path) {
+              "### $name" >> $env:GITHUB_STEP_SUMMARY
+              Get-Content $path >> $env:GITHUB_STEP_SUMMARY
+            }
+          }
       - name: Create download package and checksums
         shell: pwsh
         run: |
