@@ -17,6 +17,8 @@ def runtime(tmp_path, monkeypatch):
         json.dumps(
             {
                 "group_name": "测试群",
+                "legacy_sensitive_access_approved": True,
+                "legacy_auto_reply_enabled": True,
                 "bot_nickname": "审单bot",
                 "binding": {"account": "self", "group": "g@chatroom"},
             }
@@ -136,3 +138,38 @@ def test_self_test_setting_reaches_adapter_and_own_reply_does_not_loop(
     runtime.listener.start.side_effect = start
     group_runtime.main()
     assert runtime.send.call_count == int(enabled)
+
+
+def test_legacy_sensitive_access_requires_explicit_approval(runtime, monkeypatch):
+    config = json.loads(runtime.config.read_text())
+    config.pop("legacy_sensitive_access_approved")
+    runtime.config.write_text(json.dumps(config))
+    monkeypatch.setattr(sys, "argv", ["runtime", "check"])
+    with pytest.raises(RuntimeError, match="进程内存"):
+        group_runtime.main()
+    runtime.db.get_self_info.assert_not_called()
+    runtime.send.assert_not_called()
+
+
+def test_legacy_send_defaults_off(runtime, monkeypatch):
+    config = json.loads(runtime.config.read_text())
+    config.pop("legacy_auto_reply_enabled")
+    runtime.config.write_text(json.dumps(config))
+    monkeypatch.setattr(sys, "argv", ["runtime", "run"])
+
+    def start():
+        group, callback = runtime.listener.add_listener.call_args.args
+        callback(
+            dict(
+                local_id=2,
+                sort_seq=52,
+                type="文本",
+                sender_username="member",
+                content="@审单bot 审核 A001",
+            ),
+            None,
+        )
+
+    runtime.listener.start.side_effect = start
+    group_runtime.main()
+    runtime.send.assert_not_called()

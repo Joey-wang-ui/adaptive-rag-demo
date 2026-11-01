@@ -1,0 +1,11 @@
+-r requirements.txt
+pyinstaller==6.16.0
+# Runtime dependencies for the explicitly requested, externally downloaded wxauto4 source.
+# The wxauto4 package itself is not redistributed or installed by this build.
+pywin32>=306
+pyperclip>=1.8,<2
+psutil>=5.9,<8
+colorama>=0.4,<1
+comtypes>=1.2,<2
+uiautomation>=2.0,<3
+tenacity>=9,<10

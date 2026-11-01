@@ -1,0 +1,77 @@
+name: Publish Jiahui Windows trial
+
+on:
+  push:
+    tags: ['jiahui-trial-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen --extra dev
+      - run: uv pip install Pillow==12.3.0
+      - run: .venv/bin/python -m ruff check .
+      - run: .venv/bin/python -m ruff format --check .
+      - run: .venv/bin/python -m pytest tests wechat-audit/tests -q
+
+  windows-trial:
+    needs: verify
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install trial dependencies
+        run: python -m pip install -r wechat-audit/trial-windows-lock.txt
+      - name: Build Windows desktop
+        run: python wechat-audit/build_trial.py
+      - name: Test packaged UI, OCR and rule engine without WeChat or model API
+        shell: pwsh
+        run: |
+          $env:JIAHUI_SELF_TEST_REPORT = "$env:RUNNER_TEMP\trial-self-test.json"
+          $process = Start-Process -FilePath "dist\JiahuiAuditTrial\JiahuiAuditTrial.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged trial self-test failed" }
+          if (!(Test-Path $env:JIAHUI_SELF_TEST_REPORT)) { throw "Missing self-test report" }
+          Get-Content $env:JIAHUI_SELF_TEST_REPORT
+      - name: Check dynamic SDK imports without connecting WeChat
+        shell: pwsh
+        env:
+          PYTHONPATH: wechat-audit
+        run: |
+          python -c "import os; from pathlib import Path; from shipment_bot.wechat.wxauto4_download import download_bundle; download_bundle(Path(os.environ['RUNNER_TEMP']) / 'sdk-reviewed')"
+          $env:JIAHUI_SELF_TEST_REPORT = "$env:RUNNER_TEMP\sdk-import-test.json"
+          $arguments = @('--sdk-import-test', "`"$env:RUNNER_TEMP\sdk-reviewed`"")
+          $process = Start-Process -FilePath "dist\JiahuiAuditTrial\JiahuiAuditTrial.exe" -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged SDK import test failed" }
+          if (!(Test-Path $env:JIAHUI_SELF_TEST_REPORT)) { throw "Missing SDK import report" }
+          Get-Content $env:JIAHUI_SELF_TEST_REPORT
+      - name: Create download package and checksums
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/JiahuiAuditTrial/* -DestinationPath dist/JiahuiAuditTrial-Windows.zip
+          $hash = (Get-FileHash dist/JiahuiAuditTrial-Windows.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  JiahuiAuditTrial-Windows.zip" | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JiahuiAuditTrial-Windows
+          path: |
+            dist/JiahuiAuditTrial-Windows.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish tested trial assets
+        if: startsWith(github.ref, 'refs/tags/jiahui-trial-')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME dist/JiahuiAuditTrial-Windows.zip dist/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --title "嘉惠审核工作台 Windows 试用版" --notes-file wechat-audit/TRIAL-QUICKSTART.md --prerelease

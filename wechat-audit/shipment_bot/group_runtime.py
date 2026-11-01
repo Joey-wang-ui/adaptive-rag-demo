@@ -40,6 +40,11 @@ def main():
         if not config["group_name"] or not config["bot_nickname"]:
             raise ValueError("群名和昵称不可为空。")
         CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    if config.get("legacy_sensitive_access_approved") is not True:
+        raise RuntimeError(
+            "旧接入会读取微信本地数据库和进程内存；必须先报告风险并取得明确批准。"
+            "wx4auto 新只读回放模块不需要此能力。"
+        )
     # Importing this library reads local databases/process memory. No model API at check stage.
     from wechatauto import MediaDownloader, WeChatDB
     from wechatauto.db import Listener
@@ -126,6 +131,9 @@ def main():
             reply = workflow.handle(group, message)
             if reply is None:
                 return
+            if config.get("legacy_auto_reply_enabled") is not True:
+                print("已生成本地审核结果；自动发送关闭。", flush=True)
+                return
             # Recheck exact group binding before constructing a sending GUI.
             if resolve_group(db, config["group_name"]) != group:
                 raise RuntimeError("群身份已变化，取消发送。")
@@ -154,7 +162,7 @@ def main():
             "自己触发测试已开启：可在指定群手动输入 @群昵称 审核；测试后请关闭此选项。", flush=True
         )
     publish_state("running", account=account, group=group, name=config["group_name"])
-    print("已启用指定群审单。发订单文字或单据图片后 @昵称 审核 即可；Ctrl+C 停止。", flush=True)
+    print("已启用旧指定群监听；自动发送仅在单独明确启用时执行。Ctrl+C 停止。", flush=True)
     try:
         while True:
             time.sleep(1)
