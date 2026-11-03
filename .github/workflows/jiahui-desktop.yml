@@ -1,0 +1,87 @@
+name: Build Jiahui desktop software
+on:
+  push:
+    tags: ['jiahui-desktop-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jiahui-desktop-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked core and desktop components
+        run: |
+          uv sync --frozen --extra dev
+          uv pip install -r desktop/requirements.txt
+      - name: Validate code and build interface
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe -m ruff check app tests scripts/jiahui_desktop.py scripts/jiahui_desktop_selftest.py scripts/build_jiahui_desktop.py
+          .venv/Scripts/python.exe -m pytest tests -q
+          Push-Location frontend
+          npm ci
+          npm test
+          npm run build
+          Pop-Location
+      - name: Build self-contained application
+        run: .venv/Scripts/python.exe scripts/build_jiahui_desktop.py
+      - name: Include verified Microsoft WebView2 bootstrapper
+        shell: pwsh
+        run: |
+          $destination = 'dist/JiahuiAssistant/MicrosoftEdgeWebview2Setup.exe'
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $destination
+          $signature = Get-AuthenticodeSignature $destination
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Microsoft bootstrapper signature check failed' }
+          $probe = Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\*' -ErrorAction SilentlyContinue | Where-Object { $_.name -match 'WebView2' }
+          if (!$probe) { Start-Process $destination -ArgumentList '/silent','/install' -Wait }
+      - name: Verify packaged native window and real HTTP
+        shell: pwsh
+        run: |
+          $env:JIAHUI_SELF_TEST_REPORT = "$env:RUNNER_TEMP\desktop-self-test.json"
+          $p = Start-Process 'dist/JiahuiAssistant/JiahuiAssistant.exe' -ArgumentList '--self-test' -PassThru
+          if (!$p.WaitForExit(180000)) { taskkill /PID $p.Id /T /F; throw 'Packaged self-test timed out' }
+          $p.Refresh()
+          if ($p.ExitCode -ne 0) { throw "Packaged self-test exited $($p.ExitCode)" }
+          if (!(Test-Path $env:JIAHUI_SELF_TEST_REPORT)) { throw 'Missing packaged self-test evidence' }
+          $report = Get-Content $env:JIAHUI_SELF_TEST_REPORT -Raw | ConvertFrom-Json
+          Get-Content $env:JIAHUI_SELF_TEST_REPORT
+          if (!$report.passed -or !$report.checks.native_edge_window_and_react) { throw 'Native window verification did not pass' }
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jiahui-desktop-self-test
+          path: ${{ runner.temp }}/desktop-self-test.json
+          if-no-files-found: ignore
+      - name: Package and publish verified Windows download
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Compress-Archive -Path 'dist/JiahuiAssistant' -DestinationPath 'dist/JiahuiAssistant-Windows-x64.zip'
+          $hash = (Get-FileHash 'dist/JiahuiAssistant-Windows-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          "$hash  JiahuiAssistant-Windows-x64.zip" | Set-Content -Encoding ascii 'dist/JiahuiAssistant-Windows-x64.zip.sha256'
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            gh release create $env:GITHUB_REF_NAME 'dist/JiahuiAssistant-Windows-x64.zip' 'dist/JiahuiAssistant-Windows-x64.zip.sha256' --title "嘉惠内部业务助手 Windows 桌面版 $env:GITHUB_REF_NAME" --notes '完整解压后双击 JiahuiAssistant.exe。首次在窗口中设置账号与 DeepSeek Key，以后直接打开使用。内置 Python 运行环境、业务依赖和网页；无需安装 Python/Node。资料与密钥不在发布包内。Windows 10/11 x64，缺少 WebView2 时仅首次需联网安装包内的微软组件。真实模型需自行配置可用密钥。'
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JiahuiAssistant-Windows-x64
+          path: dist/JiahuiAssistant-Windows-x64.zip
+          if-no-files-found: error

@@ -1,4 +1,4 @@
-import { MessageSquare, Moon, MoreHorizontal, PanelLeftClose, Plus, Search, Sun, Trash2 } from "lucide-react";
+import { MessageSquare, Moon, MoreHorizontal, PanelLeftClose, Plus, Search, Settings2, Sun, Trash2 } from "lucide-react";
 import type { Conversation } from "../types";
 import { Logo } from "./Logo";
 
@@ -26,6 +26,7 @@ interface SidebarProps {
   theme: "light" | "dark";
   profileName?: string;
   identity?: string;
+  onSettings?: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -38,7 +39,7 @@ export function Sidebar(props: SidebarProps) {
   return <>
     {props.open && <button className="sidebar-scrim" aria-label="关闭侧栏" onClick={props.onClose} />}
     <aside className={`sidebar ${props.open ? "sidebar-open" : ""}`} aria-label="对话侧栏">
-      <div className="sidebar-top">
+      <div className="sidebar-top"><div className="sidebar-brand"><Logo small /><span>嘉惠<small>BUSINESS WORKSPACE</small></span></div>
         <button className="icon-button sidebar-toggle" aria-label="收起侧栏" title="收起侧栏" onClick={props.onClose}><PanelLeftClose size={19} /></button>
         <button className="icon-button" aria-label="新对话" title="新对话" onClick={props.onNew}><Plus size={20} /></button>
       </div>
@@ -57,7 +58,7 @@ export function Sidebar(props: SidebarProps) {
           </div>)}
         </div>)}
       </nav>
-      <div className="sidebar-footer">
+      <div className="sidebar-footer">{props.onSettings && <button className="sidebar-footer-button" onClick={props.onSettings}><Settings2 size={18} /><span>资料与模型设置</span></button>}
         <button className="sidebar-footer-button" onClick={props.onTheme}>
           {props.theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
           <span>{props.theme === "light" ? "深色模式" : "浅色模式"}</span>

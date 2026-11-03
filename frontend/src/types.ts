@@ -78,3 +78,17 @@ export interface Principal {
   role: string;
   scopes: string[];
 }
+
+export interface DesktopStatus {
+  desktop: boolean;
+  setup_required: boolean;
+  secure_storage: boolean;
+}
+export interface DesktopSettings {
+  data_dir: string;
+  api_key_configured: boolean;
+  secure_storage: boolean;
+  capabilities: BusinessProfile["capabilities"];
+  current_products: number;
+  draft_products: number;
+}

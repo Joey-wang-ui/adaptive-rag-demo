@@ -1,4 +1,4 @@
-import type { BusinessProfile, ChatRequest, Principal, StreamEvent } from "../types";
+import type { BusinessProfile, ChatRequest, DesktopSettings, DesktopStatus, Principal, StreamEvent } from "../types";
 import { SseDecoder } from "./sse";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -8,7 +8,11 @@ export class AuthenticationError extends Error {}
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}/api/v1${path}`, { ...init, credentials: "same-origin" });
   if (response.status === 401) throw new AuthenticationError("登录已失效，请重新登录。");
-  if (!response.ok) throw new Error(`请求失败（HTTP ${response.status}），请检查账号或服务日志。`);
+  if (!response.ok) {
+    let message = `请求失败（HTTP ${response.status}），请检查账号或服务日志。`;
+    try { const body: unknown = await response.json(); if (typeof body === "object" && body !== null && "detail" in body && typeof body.detail === "string") message = body.detail; } catch { /* Keep the status-only error. */ }
+    throw new Error(message);
+  }
   return response.json() as Promise<T>;
 }
 
@@ -69,3 +73,20 @@ export async function streamChat(
     reader.releaseLock();
   }
 }
+
+export async function getDesktopStatus(): Promise<DesktopStatus | null> {
+  const response = await fetch(`${API_BASE}/api/v1/desktop/status`, { credentials: "same-origin" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("无法读取桌面设置状态");
+  return response.json() as Promise<DesktopStatus>;
+}
+export const setupDesktop = (token: string, username: string, password: string, apiKey: string, remember: boolean) => requestJson<Principal>("/desktop/setup", {
+  method: "POST", headers: { "Content-Type": "application/json", "X-Jiahui-Setup": token }, body: JSON.stringify({ username, password, api_key: apiKey, remember_key: remember }),
+});
+export const getDesktopSettings = () => requestJson<DesktopSettings>("/desktop/settings");
+export const updateDesktopModel = (key: string, remember: boolean) => requestJson<{ capabilities: BusinessProfile["capabilities"]; persisted: boolean }>("/desktop/model", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: key, remember_key: remember }),
+});
+export const importDesktopFile = (kind: "products" | "pdf", filename: string, content: string, status: "draft" | "current", version: string) => requestJson<{ imported?: number; total?: number; pages?: number; message?: string }>(`/desktop/import/${kind}`, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename, content, status, version }),
+});

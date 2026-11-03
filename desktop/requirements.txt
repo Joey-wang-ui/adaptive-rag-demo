@@ -1,0 +1,4 @@
+# Desktop-only build/runtime dependencies; core dependencies remain in uv.lock.
+pyinstaller==6.16.0
+pywebview==6.1
+pypdf==6.10.0

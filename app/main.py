@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -39,7 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await container.aclose()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, *, extra_routers: list[APIRouter] | None = None
+) -> FastAPI:
     """Create the FastAPI application.
 
     Registers the routers under ``api_v1_prefix``, installs request-scoped
@@ -69,6 +71,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    for router in extra_routers or []:
+        app.include_router(router, prefix=prefix)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):

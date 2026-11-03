@@ -11,6 +11,8 @@ license: mit
 
 ## 嘉惠内部业务助手（第一阶段）
 
+**Windows 桌面软件：[下载软件包](https://github.com/Joey-wang-ui/adaptive-rag-demo/releases/download/jiahui-desktop-v1.1.0/JiahuiAssistant-Windows-x64.zip)**。完整解压后双击 `JiahuiAssistant.exe` 或 `START.cmd`；账号、DeepSeek Key和资料导入都在软件内完成。内置运行环境和网页，无需安装Python或Node。详见[桌面版说明](desktop/使用说明.md)。
+
 **嘉惠版源码包：[GitHub ZIP 下载](https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/tags/jiahui-assistant-v1.0.0.zip)**。完整解压后按下方嘉惠操作说明初始化账号并启动。
 
 源码包包含代码、CSV模板和说明；`.env`、账号数据库、嘉惠PDF及产品业务资料保留在本地，不随源码发布。

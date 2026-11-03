@@ -114,6 +114,10 @@ class AuthStore:
         os.chmod(path, 0o600)
         return path
 
+    def has_users(self) -> bool:
+        with self._connect() as db:
+            return db.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
+
     @staticmethod
     def _validate_access(role: str, scopes: frozenset[str]) -> None:
         if role not in ROLE_SCOPES:

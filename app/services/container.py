@@ -51,9 +51,10 @@ class AppContainer:
         self.model_capabilities: dict[str, str] = {}
 
     async def aclose(self) -> None:
-        closer = getattr(self.llm, "aclose", None)
-        if closer:
-            await closer()
+        for provider in [self.llm, *getattr(self, "retired_llms", [])]:
+            closer = getattr(provider, "aclose", None)
+            if closer:
+                await closer()
         if self.redis is not None:
             closer = getattr(self.redis, "aclose", None)
             if closer:
