@@ -13,6 +13,12 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 async def require_admin(request: Request, container: AppContainer = Depends(get_container)) -> None:
+    if container.settings.business_profile == "jiahui":
+        from app.jiahui.auth import current_principal
+
+        principal = await current_principal(request)
+        principal.require("audit")
+        return
     token = container.settings.admin_api_token.get_secret_value()
     if not token:
         if container.settings.app_env == "production":

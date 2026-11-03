@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { ChatResponse, Conversation, Message } from "../types";
-import { streamChat } from "../lib/api";
+import { AuthenticationError, streamChat } from "../lib/api";
 import { loadConversations, saveConversations } from "../lib/storage";
 
 interface State {
@@ -95,9 +95,10 @@ function reducer(state: State, action: Action): State {
 
 const DEMO_USER_ID = import.meta.env.VITE_DEMO_USER_ID || "u_demo";
 
-export function useChat() {
+export function useChat(options: { persistent?: boolean; userId?: string; onUnauthorized?: () => void } = {}) {
+  const persistent = options.persistent ?? true;
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
-    conversations: loadConversations(),
+    conversations: persistent ? loadConversations() : [],
     activeId: null,
   }));
   const stateRef = useRef(state);
@@ -105,17 +106,21 @@ export function useChat() {
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
+    if (!persistent) return;
     const timer = window.setTimeout(() => saveConversations(state.conversations), 300);
     return () => window.clearTimeout(timer);
-  }, [state.conversations]);
+  }, [state.conversations, persistent]);
 
   useEffect(() => {
+    if (!persistent) return;
     const flush = () => saveConversations(stateRef.current.conversations);
     window.addEventListener("pagehide", flush);
     return () => window.removeEventListener("pagehide", flush);
-  }, []);
+  }, [persistent]);
 
   useEffect(() => () => requestRef.current?.abort(), []);
 
@@ -145,7 +150,7 @@ export function useChat() {
       await streamChat(
         {
           message: text,
-          user_id: DEMO_USER_ID,
+          user_id: optionsRef.current.userId ?? DEMO_USER_ID,
           ...(conversation.sessionId ? { session_id: conversation.sessionId } : {}),
           ...(confirmActionId ? { confirm_action_id: confirmActionId } : {}),
         },
@@ -163,6 +168,7 @@ export function useChat() {
       if (!answered) throw new Error("连接已结束，但未收到最终回答。请重试。");
       return true;
     } catch (error) {
+      if (error instanceof AuthenticationError) optionsRef.current.onUnauthorized?.();
       const stopped = controller.signal.aborted;
       if (!answered) {
         dispatch({

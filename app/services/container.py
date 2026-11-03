@@ -48,6 +48,7 @@ class AppContainer:
         self.retriever = retriever
         self.redis = redis
         self.vector_store = vector_store
+        self.model_capabilities: dict[str, str] = {}
 
     async def aclose(self) -> None:
         closer = getattr(self.llm, "aclose", None)
@@ -62,6 +63,10 @@ class AppContainer:
 
 async def build_infrastructure(settings: Settings):
     """Create the database session factory and optional Redis connection."""
+    if settings.business_profile == "jiahui":
+        from pathlib import Path
+
+        Path(settings.jiahui_data_dir).mkdir(parents=True, exist_ok=True)
     engine = create_engine(settings)
     await init_schema(engine)
     session_factory = create_session_factory(engine)
@@ -72,6 +77,12 @@ async def build_infrastructure(settings: Settings):
 async def build_retrieval(settings: Settings, redis):
     """Build the knowledge ingestion and hybrid retrieval components."""
     embedder = build_embedding_provider(settings)
+    if settings.business_profile == "jiahui":
+        from app.jiahui.runtime import ScopedRetriever
+
+        scoped_retriever = ScopedRetriever(settings, embedder)
+        reranker = DocumentReranker(CrossEncoderRerankProvider(settings))
+        return scoped_retriever, reranker, None
     cache = (
         RedisRetrievalCache(redis, ttl_seconds=settings.retrieval_cache_ttl_seconds)
         if redis is not None
@@ -106,7 +117,12 @@ async def build_container(settings: Settings, seed: bool = False) -> AppContaine
         else InMemoryRateLimiter(limit=settings.rate_limit_per_minute)
     )
     retriever, reranker, store = await build_retrieval(settings, redis)
-    registry = build_tool_registry(retriever)
+    if settings.business_profile == "jiahui":
+        from app.tools.registry import ToolRegistry
+
+        registry = ToolRegistry()
+    else:
+        registry = build_tool_registry(retriever)
     if settings.mcp_enabled:
         specs = list(LOCAL_CATALOG)
         if settings.mcp_remote_url:
@@ -128,11 +144,11 @@ async def build_container(settings: Settings, seed: bool = False) -> AppContaine
         rate_limiter=rate_limiter,
         registry=registry,
     )
-    if seed:
+    if seed and settings.business_profile != "jiahui":
         async with session_factory() as session:
             await seed_demo_data(session)
             await session.commit()
-    return AppContainer(
+    container = AppContainer(
         settings=settings,
         llm=llm,
         chat_service=chat_service,
@@ -142,3 +158,8 @@ async def build_container(settings: Settings, seed: bool = False) -> AppContaine
         redis=redis,
         vector_store=store,
     )
+    if settings.business_profile == "jiahui":
+        from app.jiahui.runtime import probe_capabilities
+
+        container.model_capabilities = await probe_capabilities(llm, retriever, reranker, settings)
+    return container

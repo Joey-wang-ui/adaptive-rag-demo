@@ -250,3 +250,20 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
   .chat-widget-launcher { right: 16px; bottom: 16px; min-height: 46px; }
   .chat-widget { right: 16px; bottom: 74px; height: min(620px, calc(100dvh - 90px)); }
 }
+
+/* Jiahui keeps the existing workspace, with an explicit internal sign-in gate. */
+.login-shell { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--canvas); color: var(--text, #20242c); }
+.login-card { width: min(100%, 420px); padding: 32px; border: 1px solid var(--border, #ddd); border-radius: 18px; display: grid; gap: 16px; background: var(--surface); }
+.login-card h1 { font-size: 25px; margin: 0; }
+.login-card p { margin: 0; line-height: 1.6; }
+.login-card label { display: grid; gap: 8px; font-weight: 600; }
+.login-card input { width: 100%; padding: 12px; border: 1px solid #aeb5bd; border-radius: 8px; font: inherit; color: inherit; background: transparent; }
+.login-card button { padding: 12px 18px; border: 0; border-radius: 8px; font: inherit; background: #157f66; color: #fff; cursor: pointer; }
+.login-card button:disabled { opacity: .6; cursor: wait; }
+.login-card small { color: #616b77; line-height: 1.6; }
+.login-error { color: #b12b2b; }
+.logout-button { border: 1px solid var(--border, #ddd); background: transparent; color: inherit; padding: 6px 10px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.business-status { margin: 0 22px 12px; padding: 12px 16px; border: 1px solid #d2ddd7; border-radius: 10px; color: var(--text, #293b36); font-size: 12px; line-height: 1.6; display: grid; gap: 3px; background: var(--accent-soft); }
+.business-status strong { font-size: 13px; }
+.business-status div { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 2px; opacity: .85; }
+@media (max-width: 640px) { .business-status { margin: 0 12px 8px; } .topbar .model-title { font-size: 14px; } .topbar-right { gap: 6px; } .help-button { display: none; } }

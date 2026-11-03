@@ -14,7 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.agents.graph import build_graph
 from app.agents.state import AgentState
 from app.config.settings import Settings
-from app.core.exceptions import AppError, GuardrailError, InvalidRequestError, RateLimitError
+from app.core.exceptions import (
+    AppError,
+    GuardrailError,
+    InvalidRequestError,
+    RateLimitError,
+    UnauthorizedError,
+)
 from app.core.ids import new_id
 from app.core.request_scope import request_session
 from app.infra.rate_limit import RateLimiter
@@ -59,7 +65,12 @@ class ChatService:
         self._rate_limiter = rate_limiter
         self.registry = registry or build_tool_registry(retriever)
         self._pending_actions: dict[str, PendingConfirmation] = {}
-        self._graph = build_graph(
+        graph_builder = build_graph
+        if settings.business_profile == "jiahui":
+            from app.jiahui.graph import build_jiahui_graph
+
+            graph_builder = build_jiahui_graph
+        self._graph = graph_builder(
             llm=llm,
             settings=settings,
             retriever=retriever,
@@ -67,12 +78,14 @@ class ChatService:
             registry=self.registry,
         )
 
-    async def chat(self, request: ChatRequest, *, trace_id: str) -> ChatResponse:
+    async def chat(
+        self, request: ChatRequest, *, trace_id: str, scopes: tuple[str, ...] = ()
+    ) -> ChatResponse:
         await self._enforce_rate_limit(request.user_id)
         started = time.perf_counter()
         session_id = request.session_id or new_id("sess_")
         async with request_session(self._session_factory) as db:
-            state = await self._initial_state(db, request, session_id, trace_id)
+            state = await self._initial_state(db, request, session_id, trace_id, scopes)
             result = await self._invoke(state)
             response = self._to_response(result, session_id=session_id, trace_id=trace_id)
             await self._persist(db, request, response, summary=result.get("summary") or "")
@@ -81,13 +94,15 @@ class ChatService:
         self._observe(response, started)
         return response
 
-    async def stream(self, request: ChatRequest, *, trace_id: str) -> AsyncIterator[dict]:
+    async def stream(
+        self, request: ChatRequest, *, trace_id: str, scopes: tuple[str, ...] = ()
+    ) -> AsyncIterator[dict]:
         """SSE: report progress, then send only the validated user-facing answer."""
         await self._enforce_rate_limit(request.user_id)
         started = time.perf_counter()
         session_id = request.session_id or new_id("sess_")
         async with request_session(self._session_factory) as db:
-            state = await self._initial_state(db, request, session_id, trace_id)
+            state = await self._initial_state(db, request, session_id, trace_id, scopes)
             yield {"event": "started", "trace_id": trace_id}
             queue: asyncio.Queue[dict | None] = asyncio.Queue()
             holder: dict = {"merged": dict(state), "guardrail": None, "error": None}
@@ -158,16 +173,30 @@ class ChatService:
         if not allowed:
             raise RateLimitError()
 
+    async def require_session_owner(self, session_id: str | None, user_id: str) -> None:
+        """Check ownership before SSE headers are committed; never create a row."""
+        if not session_id:
+            return
+        from app.repositories.models import SessionRow
+
+        async with self._session_factory() as db:
+            row = await db.get(SessionRow, session_id)
+            if row is not None and row.user_id != user_id:
+                raise UnauthorizedError("无权访问其他账号的会话")
+
     async def _initial_state(
         self,
         db: AsyncSession,
         request: ChatRequest,
         session_id: str,
         trace_id: str,
+        scopes: tuple[str, ...] = (),
     ) -> AgentState:
         confirmed_action = self._resolve_confirmation(request, session_id)
         sessions = SessionRepository(db)
-        await sessions.get_or_create(session_id, request.user_id)
+        session_row = await sessions.get_or_create(session_id, request.user_id)
+        if session_row.user_id != request.user_id:
+            raise UnauthorizedError("无权访问其他账号的会话")
         history = await sessions.recent_messages(session_id)
         return {
             "trace_id": trace_id,
@@ -186,6 +215,7 @@ class ChatService:
             "confirm_action_id": request.confirm_action_id,
             "confirmed_action": confirmed_action,
             "idempotency_key": request.idempotency_key,
+            "extra": {"scopes": list(scopes)},
         }
 
     def _resolve_confirmation(self, request: ChatRequest, session_id: str) -> ActionProposal | None:

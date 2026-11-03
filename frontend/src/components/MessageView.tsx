@@ -30,9 +30,10 @@ interface MessageViewProps {
   busy: boolean;
   onConfirm: (action: ActionProposal, messageId: string) => void;
   onCancel: (messageId: string) => void;
+  readOnly?: boolean;
 }
 
-export function MessageView({ conversation, busy, onConfirm, onCancel }: MessageViewProps) {
+export function MessageView({ conversation, busy, onConfirm, onCancel, readOnly = false }: MessageViewProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [conversation.messages]);
@@ -54,7 +55,7 @@ export function MessageView({ conversation, busy, onConfirm, onCancel }: Message
             {message.content ? <div className={`markdown ${message.state === "error" ? "message-error" : ""}`}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div> : <div className="thinking"><span /><span /><span /></div>}
             {message.state === "complete" && <>
               <CitationList citations={message.citations ?? []} />
-              {message.pendingAction && <ActionCard action={message.pendingAction} disabled={busy} onConfirm={() => onConfirm(message.pendingAction!, message.id)} onCancel={() => onCancel(message.id)} />}
+              {message.pendingAction && !readOnly && <ActionCard action={message.pendingAction} disabled={busy} onConfirm={() => onConfirm(message.pendingAction!, message.id)} onCancel={() => onCancel(message.id)} />}
               <div className="message-tools"><button aria-label="复制回答" title="复制回答" onClick={() => void copy(message)}>{copiedId === message.id ? <Check size={16} /> : <Copy size={16} />}</button></div>
             </>}
             {message.state === "stopped" && <span className="message-note">生成已停止</span>}

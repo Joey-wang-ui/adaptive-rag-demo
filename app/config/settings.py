@@ -1,9 +1,10 @@
 """Environment-backed settings with a cached accessor."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +24,22 @@ class Settings(BaseSettings):
     app_name: str = "adaptive-rag-cs"
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
+    business_profile: Literal["ecommerce", "jiahui"] = "jiahui"
+    jiahui_data_dir: str = "data/jiahui"
+
+    @model_validator(mode="after")
+    def isolate_business_data(self) -> "Settings":
+        if self.business_profile == "jiahui":
+            root = Path(self.jiahui_data_dir).resolve()
+            self.database_url = "sqlite+aiosqlite:///" + (root / "conversations.db").as_posix()
+            self.knowledge_dir = str(root / "knowledge")
+            # V1 uses per-request, permission-filtered in-memory indices. Never
+            # share old demo vectors, cached answers, MCP tools or order data.
+            self.redis_url = ""
+            self.qdrant_url = ""
+            self.qdrant_collection = "jiahui_knowledge"
+            self.mcp_enabled = False
+        return self
 
     llm_backend: Literal["auto", "ollama"] = "auto"
     ollama_base_url: str = "http://127.0.0.1:11434"

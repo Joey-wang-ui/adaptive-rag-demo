@@ -1,0 +1,26 @@
+{
+  "started_at": "2026-11-03T12:27:36.136563+00:00",
+  "target": "127.0.0.1:8001",
+  "data": "temporary synthetic fixtures; no formal Jiahui data modified",
+  "providers": "explicitly isolated offline path; not a real model verification",
+  "checks": {
+    "repeatable_import": "passed; synthetic CSV imported twice with no second change",
+    "unauthenticated_http": "passed; HTTP 401",
+    "authenticated_profile": "passed; two visible products, restricted record excluded; offline clearly declared",
+    "leading_zero_duplicate_clarification": "passed; exact 00001 returns two independent choices and citations",
+    "selection_and_row_citation": "passed; independent record ID selects one specification with CSV row location",
+    "comparison": "passed; both imported specifications remain sourced",
+    "missing_data": "passed; explicit missing/confirmation answer without invented source",
+    "retrieval_permission": "passed; restricted record absent from answer and citations",
+    "knowledge_page_citation": "passed; real retrieval with explicit offline excerpt and retained page/section",
+    "unconnected_erp": "passed; no invented inventory",
+    "business_writes_disabled": "passed; refused without action proposal",
+    "server_owned_identity": "passed; knowledge-only account cannot impersonate products account via user_id",
+    "browser_real_login_chat_citation": "passed; real cookie login, SSE clarification and selected product with row source",
+    "mobile_workspace": "passed; 390px workspace has no horizontal page overflow",
+    "browser_logout": "passed; conversation cleared and cookie no longer authorizes HTTP"
+  },
+  "status": "passed",
+  "completed_at": "2026-11-03T12:27:40.824538+00:00",
+  "cleanup": "temporary data/account removed; isolated server stopped"
+}

@@ -3,6 +3,8 @@
 import os
 
 os.environ["APP_ENV"] = "testing"
+# Legacy suites explicitly exercise ecommerce; Jiahui suites select their profile.
+os.environ["BUSINESS_PROFILE"] = "ecommerce"
 os.environ["LLM_BACKEND"] = "auto"
 os.environ["DEEPSEEK_API_KEY"] = ""
 os.environ["CROSS_ENCODER_FORCE"] = "false"

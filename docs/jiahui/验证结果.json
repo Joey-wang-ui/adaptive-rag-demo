@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-03",
+  "runtime": "current managed Linux cloud instance; loopback 127.0.0.1 port 8000; not user Windows PC",
+  "branch_base": "codex/jiahui-trial-release",
+  "git_base": "5633c92cbe869ef77baf27c5ce4346c4ecbb138b",
+  "checks": {
+    "python_pytest": {
+      "passed": 335,
+      "failed": 0,
+      "warnings": 1,
+      "warning_detail": "upstream LangGraph pending deprecation"
+    },
+    "python_mypy": "passed:132 source files",
+    "ruff": "passed",
+    "frontend_vitest": {
+      "passed": 7,
+      "failed": 0
+    },
+    "frontend_typescript_and_build": "passed via tsc -b && vite build",
+    "real_http_and_chromium": {
+      "passed": 15,
+      "failed": 0,
+      "fixtures": "isolated TemporaryDirectory, generated test accounts; removed"
+    },
+    "launcher_setup_only": "passed uv frozen sync + npm ci + build",
+    "launcher_skip_setup_startup": "passed; final process running",
+    "unauthenticated_chat_http": 401,
+    "wechat_audit_tracked_changes": 0
+  },
+  "models": {
+    "deepseek": "adapter implemented; no usable key configured; no successful real DeepSeek generation claim",
+    "embedding": "hash fallback; sentence-transformers/weights unavailable",
+    "reranker": "lexical fallback; no real cross-encoder"
+  },
+  "data": {
+    "pdf_total_pages": 22,
+    "reference_body_pages_imported": 19,
+    "reference_status": "not confirmed current",
+    "product_draft_candidates_imported": 324,
+    "current_approved_products": 0,
+    "automatic_extraction": "not manually confirmed; 9 duplicate-code groups and 81 risk flags; nonstandard tables retained as page text"
+  },
+  "external_requirements": [
+    "Securely supply DEEPSEEK_API_KEY in environment settings and save/apply; rerun model probe",
+    "Initialize actual operator account interactively; no hardcoded/default admin",
+    "Review product candidates, effective versions, missing fields, and access scopes before activating",
+    "Provide GuanjiaPo product/version/API or authorized read-only middleware later"
+  ],
+  "windows_cmd": "wrapper supplied; Python launcher tested on Linux, not Windows hardware",
+  "remote_publication": "No GitHub push, no public internet service, no environment snapshot publication performed"
+}

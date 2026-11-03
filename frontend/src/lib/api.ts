@@ -1,7 +1,26 @@
-import type { ChatRequest, StreamEvent } from "../types";
+import type { BusinessProfile, ChatRequest, Principal, StreamEvent } from "../types";
 import { SseDecoder } from "./sse";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+
+export class AuthenticationError extends Error {}
+
+async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_BASE}/api/v1${path}`, { ...init, credentials: "same-origin" });
+  if (response.status === 401) throw new AuthenticationError("登录已失效，请重新登录。");
+  if (!response.ok) throw new Error(`请求失败（HTTP ${response.status}），请检查账号或服务日志。`);
+  return response.json() as Promise<T>;
+}
+
+export const getProfile = () => requestJson<BusinessProfile>("/profile");
+export const getPrincipal = () => requestJson<Principal>("/auth/me");
+export const login = (username: string, password: string) => requestJson<Principal>("/auth/login", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }),
+});
+export async function logout(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/v1/auth/logout`, { method: "POST", credentials: "same-origin" });
+  if (!response.ok && response.status !== 401) throw new Error("退出未完成，请重试。");
+}
 
 export async function checkHealth(signal?: AbortSignal): Promise<boolean> {
   try {
@@ -21,9 +40,11 @@ export async function streamChat(
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify(payload),
+    credentials: "same-origin",
     signal,
   });
   if (!response.ok) {
+    if (response.status === 401) throw new AuthenticationError("登录已失效，请重新登录。");
     let message = `请求失败（HTTP ${response.status}）`;
     try {
       const error: unknown = await response.json();

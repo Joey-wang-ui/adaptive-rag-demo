@@ -4,6 +4,19 @@ import { MessageView } from "./MessageView";
 import type { Conversation } from "../types";
 
 describe("answer presentation", () => {
+  it("keeps citations but hides business write confirmations in read-only mode", () => {
+    const conversation: Conversation = {
+      id: "jiahui", title: "产品资料", updatedAt: 0,
+      messages: [{ id: "answer", role: "assistant", state: "complete", content: "资料中的规格为测试规格。",
+        citations: [{ chunk_id: "page4-row3", document_id: "catalog", title: "目录", section: "PDF第4页 行3" }],
+        pendingAction: { action_id: "old-action", tool_name: "cancel_order", arguments: {}, risk: "high", summary: "取消订单" },
+      }],
+    };
+    const html = renderToStaticMarkup(<MessageView conversation={conversation} busy={false} onConfirm={() => {}} onCancel={() => {}} readOnly />);
+    expect(html).toContain("PDF第4页 行3");
+    expect(html).not.toContain("确认执行");
+    expect(html).not.toContain("取消订单");
+  });
   it("shows the answer and source without internal timing or route metadata", () => {
     const conversation: Conversation = {
       id: "chat-1",

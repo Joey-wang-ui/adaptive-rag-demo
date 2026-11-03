@@ -62,3 +62,19 @@ export interface Conversation {
   sessionId?: string;
   messages: Message[];
 }
+
+export interface BusinessProfile {
+  mode: "jiahui" | "ecommerce";
+  name: string;
+  welcome: string;
+  examples: string[];
+  product_count: number;
+  catalog_status: string;
+  capabilities: { llm: string; embedding: string; reranker: string };
+}
+
+export interface Principal {
+  username: string;
+  role: string;
+  scopes: string[];
+}

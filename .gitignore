@@ -73,3 +73,7 @@ wechat-audit/runtime-package/node_modules/
 # Local scratch
 *.tmp
 scratch/
+
+# Private Jiahui catalogues, credentials, reference sources and backups
+data/jiahui/*
+!data/jiahui/.gitkeep

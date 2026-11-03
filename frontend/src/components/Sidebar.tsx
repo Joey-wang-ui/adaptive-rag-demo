@@ -24,6 +24,8 @@ interface SidebarProps {
   onSearch: () => void;
   onTheme: () => void;
   theme: "light" | "dark";
+  profileName?: string;
+  identity?: string;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -60,7 +62,7 @@ export function Sidebar(props: SidebarProps) {
           {props.theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
           <span>{props.theme === "light" ? "深色模式" : "浅色模式"}</span>
         </button>
-        <div className="profile-row"><span className="profile-avatar">A</span><span><strong>Adaptive RAG</strong><small>本地演示工作台</small></span><MoreHorizontal size={18} /></div>
+        <div className="profile-row"><span className="profile-avatar">{props.identity ? "嘉" : "A"}</span><span><strong>{props.profileName ?? "Adaptive RAG"}</strong><small>{props.identity ?? "本地演示工作台"}</small></span><MoreHorizontal size={18} /></div>
       </div>
     </aside>
   </>;

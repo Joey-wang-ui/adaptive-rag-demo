@@ -9,6 +9,18 @@ pinned: false
 license: mit
 ---
 
+## 嘉惠内部业务助手（第一阶段）
+
+**嘉惠版源码包：[GitHub ZIP 下载](https://github.com/Joey-wang-ui/adaptive-rag-demo/archive/refs/tags/jiahui-assistant-v1.0.0.zip)**。完整解压后按下方嘉惠操作说明初始化账号并启动。
+
+源码包包含代码、CSV模板和说明；`.env`、账号数据库、嘉惠PDF及产品业务资料保留在本地，不随源码发布。
+
+默认业务模式为嘉惠，API必须登录。当前业务入口为 `start-jiahui.cmd`（Windows），或 `python -m scripts.start_jiahui`。
+提供服务端登录、按岗位分配资料权限、独立产品目录/知识资料、来源引用和管家婆只读适配接口。
+完整操作说明：[嘉惠启动与维护](docs/JIAHUI.md)。当前试用以已授权嘉惠资料为依据，未接ERP不返回价格/库存，未配置DeepSeek时明确显示原文节选。
+
+以下保留的电商示例需显式设置 `BUSINESS_PROFILE=ecommerce`；不作为嘉惠制度或业务资料。
+
 ## 本仓库：客服演示与微信审单试用
 
 **微信群审单桌面界面：** 双击 **`open-group-audit.cmd`**，填写群名、昵称和 Key，点击检测 / 启动 / 停止。v0.4 支持可选的自己触发测试，并静默跳过已完成的同一批审核。支持订单文字、图片和图文混合（1～4份）后 @审核，也可首行 @审核、换行粘贴正文；只有出货单也能自查，不要求标签编号。软件内可改审核偏好并接其他 OpenAI 兼容 LLM。打开软件不自动回复。需要已安装的 Python 3.12；独立 Windows 软件包由仓库 Actions 构建。详见 [桌面版说明](wechat-audit/DESKTOP.md)。
