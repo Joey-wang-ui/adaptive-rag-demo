@@ -1,5 +1,9 @@
 # 嘉惠内部业务助手第一版
 
+**日常使用请下载[Windows完整软件包](https://github.com/Joey-wang-ui/adaptive-rag-demo/releases/download/jiahui-desktop-v1.1.0/JiahuiAssistant-Windows-x64.zip)，完整解压后双击 `JiahuiAssistant.exe` 或 `START.cmd`。首次在软件窗口里创建账号、填写Key，以后直接打开使用。无需安装Python/Node，也不用执行下面的源码部署命令。**
+
+桌面版操作见[使用说明](../desktop/使用说明.md)。以下内容主要面向源码开发与维护。
+
 用于内部产品资料查询和业务知识问答。价格、库存、订单只预留只读接口，未连接管家婆时统一说明“尚未接入业务数据”；第一版不执行取消订单、退款或库存扣减。嘉惠为默认业务模式，微信审单启动器保留。
 
 开发接入点为 `app/jiahui/business.py` 的 `ReadOnlyERP` 协议和 `UnconnectedERP` 默认实现，仅允许 `prices`、`inventory`、`orders` 查询，并接收服务端认证后的范围。后续应根据实际管家婆产品版本，使用厂商支持的 API 或经过授权的只读中间件替换适配器；不能把历史报价导入为当前成交价，也不应绕过岗位权限直接访问数据库。

@@ -1,0 +1,23 @@
+{
+  "version": "jiahui-desktop-v1.1.0",
+  "asset": "JiahuiAssistant-Windows-x64.zip",
+  "bytes": 80261443,
+  "sha256": "44bab31ee159d41910ed58964550d841e3e04010cc56b739a261e9b6149f839a",
+  "windows_workflow": "https://github.com/Joey-wang-ui/adaptive-rag-demo/actions/runs/41640684753",
+  "windows_workflow_result": "success",
+  "windows_packaged_checks": [
+    "native Edge window renders React",
+    "real cookie login and authentication gate",
+    "hybrid retrieval graph answer and citation",
+    "Windows Credential Manager roundtrip using temporary secret",
+    "honest offline fallback",
+    "ERP unconnected response",
+    "logout and owned process shutdown"
+  ],
+  "linux_pytest_passed": 342,
+  "frontend_tests_passed": 7,
+  "real_desktop_ui_smoke_passed": 8,
+  "archive_download_and_hash_verification": "passed",
+  "real_deepseek_generation": "not verified: user API key required; packaged tests use explicit offline fixtures",
+  "private_data": "No business PDF/catalog, accounts, sessions or keys included in GitHub release."
+}

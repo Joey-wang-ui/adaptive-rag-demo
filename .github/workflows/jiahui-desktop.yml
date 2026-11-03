@@ -33,11 +33,16 @@ jobs:
         shell: pwsh
         run: |
           .venv/Scripts/python.exe -m ruff check app tests scripts/jiahui_desktop.py scripts/jiahui_desktop_selftest.py scripts/build_jiahui_desktop.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .venv/Scripts/python.exe -m pytest tests -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Push-Location frontend
           npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
       - name: Build self-contained application
         run: .venv/Scripts/python.exe scripts/build_jiahui_desktop.py
