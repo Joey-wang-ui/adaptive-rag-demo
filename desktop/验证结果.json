@@ -1,23 +1,38 @@
 {
-  "version": "jiahui-desktop-v1.1.0",
+  "version": "jiahui-desktop-v1.1.2",
+  "verified_date": "2026-11-04",
   "asset": "JiahuiAssistant-Windows-x64.zip",
-  "bytes": 80261443,
-  "sha256": "44bab31ee159d41910ed58964550d841e3e04010cc56b739a261e9b6149f839a",
-  "windows_workflow": "https://github.com/Joey-wang-ui/adaptive-rag-demo/actions/runs/41640684753",
+  "bytes": 102929811,
+  "sha256": "1410e07a21d46eaeb129f4f8179590af9ea5753cd645a0f95084c8a7f2d9a604",
+  "workflow": "https://github.com/Joey-wang-ui/adaptive-rag-demo/actions/runs/41788310678",
   "windows_workflow_result": "success",
-  "windows_packaged_checks": [
-    "native Edge window renders React",
-    "real cookie login and authentication gate",
-    "hybrid retrieval graph answer and citation",
-    "Windows Credential Manager roundtrip using temporary secret",
-    "honest offline fallback",
-    "ERP unconnected response",
-    "logout and owned process shutdown"
-  ],
-  "linux_pytest_passed": 342,
-  "frontend_tests_passed": 7,
-  "real_desktop_ui_smoke_passed": 8,
-  "archive_download_and_hash_verification": "passed",
-  "real_deepseek_generation": "not verified: user API key required; packaged tests use explicit offline fixtures",
-  "private_data": "No business PDF/catalog, accounts, sessions or keys included in GitHub release."
+  "tests": {
+    "python_pytest_passed": 360,
+    "frontend_tests_passed": 14,
+    "mypy": "passed",
+    "ruff": "passed",
+    "real_pdf_http": "passed:22 pages,324 reference product records,leading-zero code,duplicate codes,citations",
+    "real_pdf_browser_checks_passed": 5,
+    "packaged_windows_native_and_pdf_restart_reuse": "passed",
+    "download_http": 200,
+    "zip_crc_and_sha256": "passed"
+  },
+  "user_data_handling": {
+    "old_original_pdf": "retained; automatically repaired into reference product catalogue when missing",
+    "accounts_and_keys": "unchanged storage paths; not reset or bundled",
+    "repeat_import": "idempotent; reuse after restart; pre-change backups",
+    "actual_customer_pdf": "only validated in isolated temporary data; no customer PDF or catalogue uploaded to GitHub"
+  },
+  "generated_rag_material": {
+    "title": "【AI整理】嘉惠助手操作指引（非公司制度）",
+    "scope": "knowledge",
+    "status": "reference",
+    "contents": "software import,query,source-checking,backup and reuse steps only; no invented food/price/inventory facts"
+  },
+  "limitations": [
+    "Reference catalogue does not establish current validity",
+    "Nonstandard tables remain source text rather than guessed SKUs",
+    "Scanned pages need OCR and are reported separately",
+    "Real DeepSeek calls require the operator own usable API key; test fixtures explicitly offline"
+  ]
 }

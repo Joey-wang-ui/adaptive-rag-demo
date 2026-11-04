@@ -150,3 +150,11 @@ python -m app.jiahui.import_catalog --csv data/jiahui/imports/杭州嘉惠目录
 CSV对比和换算回答为程序根据结构化字段生成；知识问答在DeepSeek可用时让模型选择相关原文并逐字校验，不允许模型扩写未知食品属性，校验失败则明确退回原文节选。
 
 实际浏览器验证脚本：`python scripts/smoke_jiahui_browser.py`（需要系统Python安装Playwright并提供Chromium；应用使用项目.venv）。脚本只用TemporaryDirectory演示数据和随机测试账号，不修改正式嘉惠目录；结果写入 `logs/jiahui-browser-smoke.json`。
+
+## v1.1.2 导入修复验收
+
+已通过Windows打包/原生窗口/PDF目录与重启复用自检，并实际下载成品核对ZIP和SHA-256。隔离环境使用用户目录PDF验证22页原文和324条参考产品，保留前导零、重复编号和PDF页码。常规回归360项Python、14项前端测试通过。
+
+关闭旧版后，将新软件完整解压到新文件夹运行；账号和Key仍复用原Windows用户目录。新版会检查旧版已保存的PDF并补建参考目录，也可点“检查并修复已导入目录”。没有原件的首次安装仍需选择自己的PDF或CSV导入，PDF版本可留空。正式业务文件不随GitHub软件包公开发布。
+
+新增【AI整理】软件操作与资料核实指引，已与原始产品PDF分开标注；不是嘉惠已确认制度，不构造食品、价格或库存事实。
