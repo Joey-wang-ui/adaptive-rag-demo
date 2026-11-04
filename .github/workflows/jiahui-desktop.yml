@@ -12,6 +12,9 @@ jobs:
   windows:
     runs-on: windows-2025
     timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     permissions:
       contents: write
     steps:
@@ -34,8 +37,17 @@ jobs:
         run: |
           .venv/Scripts/python.exe -m ruff check app tests scripts/jiahui_desktop.py scripts/jiahui_desktop_selftest.py scripts/build_jiahui_desktop.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .venv/Scripts/python.exe -m pytest tests -q
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .venv/Scripts/python.exe -m pytest tests -q --junitxml="$env:RUNNER_TEMP/desktop-tests.xml"
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) {
+            if (Test-Path "$env:RUNNER_TEMP/desktop-tests.xml") {
+              [xml]$testReport = Get-Content "$env:RUNNER_TEMP/desktop-tests.xml" -Raw -Encoding UTF8
+              foreach ($case in $testReport.SelectNodes('//testcase[failure or error]')) {
+                Write-Output "::error::Windows test failed: $($case.classname).$($case.name)"
+              }
+            }
+            exit $testExit
+          }
           Push-Location frontend
           npm ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

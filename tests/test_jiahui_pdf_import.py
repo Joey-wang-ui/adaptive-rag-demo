@@ -51,7 +51,7 @@ def test_partial_pdf_keeps_readable_pages_and_reports_scanned_page(tmp_path):
     assert report["text_characters"] > 10 and report["source_saved"]
     root = tmp_path / "sources" / "pdf" / report["source_sha256"]
     assert (root / "isolated.pdf").read_bytes() == content
-    entries = json.loads((tmp_path / "knowledge" / "manifest.json").read_text())
+    entries = json.loads((tmp_path / "knowledge" / "manifest.json").read_text(encoding="utf-8"))
     assert (
         len(entries) == 1
         and entries[0]["status"] == "reference"
@@ -60,7 +60,7 @@ def test_partial_pdf_keeps_readable_pages_and_reports_scanned_page(tmp_path):
     assert not (tmp_path / "products.json").exists()
     again = import_pdf(content, tmp_path, filename="isolated.pdf", version="demo")
     assert again["imported_pages"] == 1 and again["changed_pages"] == 0
-    assert len(json.loads((tmp_path / "knowledge" / "manifest.json").read_text())) == 1
+    assert len(json.loads((tmp_path / "knowledge" / "manifest.json").read_text(encoding="utf-8"))) == 1
 
 
 def test_all_scanned_pdf_has_specific_error_and_preserves_original(tmp_path):
@@ -110,7 +110,7 @@ def test_corrupt_page_cannot_hide_other_pages(tmp_path, monkeypatch):
         make_pdf(["Bad page", "Other readable product"]), tmp_path, filename="partial.pdf"
     )
     assert report["imported_pages"] == 1 and report["skipped_pages"][0]["page"] == 1
-    entries = json.loads((tmp_path / "knowledge" / "manifest.json").read_text())
+    entries = json.loads((tmp_path / "knowledge" / "manifest.json").read_text(encoding="utf-8"))
     assert entries[0]["location"] == "PDF第2页"
 
 
@@ -120,7 +120,7 @@ def test_multiple_versions_warn_and_keep_prior_reference(tmp_path):
         make_pdf(["Version B product"]), tmp_path, filename="catalog.pdf", version="B"
     )
     assert any("同名来源" in warning for warning in report["warnings"])
-    entries = json.loads((tmp_path / "knowledge" / "manifest.json").read_text())
+    entries = json.loads((tmp_path / "knowledge" / "manifest.json").read_text(encoding="utf-8"))
     assert {entry["version"] for entry in entries} == {"A", "B"}
 
 
@@ -131,7 +131,7 @@ def test_corrupt_retained_source_is_not_silently_overwritten(tmp_path):
     (root / "page-001.txt").write_text("Local operator changed file")
     with pytest.raises(PDFImportError, match="校验不一致"):
         import_pdf(content, tmp_path, filename="catalog.pdf")
-    assert (root / "page-001.txt").read_text() == "Local operator changed file"
+    assert (root / "page-001.txt").read_text(encoding="utf-8") == "Local operator changed file"
 
 
 @pytest.mark.parametrize(

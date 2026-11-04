@@ -67,7 +67,7 @@ def test_repair_does_not_reactivate_deactivated_pdf_or_change_confirmed_record(t
     content = synthetic_catalog_pdf()
     import_pdf(content, tmp_path, filename="isolated.pdf")
     path = tmp_path / "products.json"
-    records = json.loads(path.read_text())
+    records = json.loads(path.read_text(encoding="utf-8"))
     records["records"][0]["status"] = "current"
     path.write_text(json.dumps(records, ensure_ascii=False))
     state = tmp_path / "sources/pdf" / hashlib.sha256(content).hexdigest() / "catalog-state.json"
@@ -75,7 +75,7 @@ def test_repair_does_not_reactivate_deactivated_pdf_or_change_confirmed_record(t
     repair_pdf_catalogs(tmp_path)
     assert sum(r["status"] == "current" for r in Catalog.load(tmp_path).records) == 1
     manifest = tmp_path / "knowledge/manifest.json"
-    entries = json.loads(manifest.read_text())
+    entries = json.loads(manifest.read_text(encoding="utf-8"))
     for entry in entries:
         entry["status"] = "historical"
     manifest.write_text(json.dumps(entries))

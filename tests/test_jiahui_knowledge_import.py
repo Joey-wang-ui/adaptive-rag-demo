@@ -15,7 +15,7 @@ def source(tmp_path):
 
 
 def load(tmp_path):
-    return json.loads((tmp_path / "data/knowledge/manifest.json").read_text())
+    return json.loads((tmp_path / "data/knowledge/manifest.json").read_text(encoding="utf-8"))
 
 
 def test_knowledge_import_preserves_original_and_source_location(tmp_path):
@@ -87,7 +87,7 @@ def test_same_version_update_can_restore_old_manifest_and_body(tmp_path):
     path.write_text("修订后的来源原文。", encoding="utf-8")
     result = import_knowledge(path, tmp_path / "data", **kwargs)
     assert (tmp_path / "data/knowledge" / old_entry["path"]).read_bytes() == old_text
-    assert json.loads(Path(result["backup"]).read_text())[0] == old_entry
+    assert json.loads(Path(result["backup"]).read_text(encoding="utf-8"))[0] == old_entry
 
 
 @pytest.mark.parametrize(
