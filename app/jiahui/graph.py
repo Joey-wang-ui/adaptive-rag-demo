@@ -48,6 +48,90 @@ def conversion_answer(query, row):
     return "请明确数量、原单位和目标单位；只支持资料中已确认的换算方向。"
 
 
+_OVERVIEW_QUERIES = {
+    "没资料吗",
+    "没有资料吗",
+    "有资料吗",
+    "有没有资料",
+    "资料呢",
+    "资料在哪",
+    "资料在哪里",
+    "资料没有",
+    "rag资料没有",
+    "知识库",
+    "知识库状态",
+    "查看知识库",
+    "知识库有哪些资料",
+    "知识库里有什么",
+    "资料概况",
+    "资料概览",
+    "资料列表",
+    "有什么资料",
+    "有哪些资料",
+    "资料有哪些",
+    "导入成功了吗",
+    "已经录入了吗",
+    "目录录入了吗",
+    "产品目录录入了吗",
+    "产品目录",
+    "查看产品目录",
+    "有哪些产品",
+    "有哪些商品",
+    "有什么产品",
+    "介绍一下产品",
+    "有什么商品",
+    "你有哪些资料",
+    "你知道哪些产品",
+}
+
+
+def is_overview_query(query: str) -> bool:
+    query = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", query.casefold())
+    return query in _OVERVIEW_QUERIES
+
+
+def overview_answer(catalog, retriever, scopes):
+    rows = catalog.visible_records(scopes)
+    documents = retriever.knowledge_documents(scopes)
+    grouped = {}
+    for doc in documents:
+        grouped.setdefault((doc["source_file"], doc["version"], doc["status"]), []).append(doc)
+    references = sum(row.get("status") == "reference" for row in rows)
+    if not rows and not documents:
+        drafts = sum(
+            row.get("status") == "draft"
+            for row in catalog.visible_records(scopes, include_history=True)
+        )
+        return "当前账号还没有可查询的产品目录或知识资料。" + (
+            f"有 {drafts} 条待核实草稿，请管理员在资料管理中确认。"
+            if drafts
+            else "请在“资料与模型设置 → 资料管理”导入产品CSV或文字版PDF；如果已上传PDF，可以点击检查并修复已导入目录。"
+        )
+    parts = [
+        f"有资料。当前账号可查询 **{len(rows)} 条产品目录记录**（其中 {references} 条为参考目录），以及 **{len({d['source_file'] for d in documents})} 份知识来源、{len(documents)} 页/章节**。"
+    ]
+    if grouped:
+        parts.append(
+            "已接入的资料：\n"
+            + "\n".join(
+                f"- 《{source}》：{len(docs)} 页/章节，版本 {version}，{'参考资料，现行有效性待确认' if status == 'reference' else '已启用'}。"
+                for (source, version, status), docs in list(grouped.items())[:12]
+            )
+        )
+    if rows:
+        parts.append(
+            "目录示例：\n"
+            + "\n".join(
+                f"- {r['name']}｜编号 {r.get('code') or '未提供'}｜规格 {r.get('spec') or '未提供'}"
+                for r in rows[:5]
+            )
+        )
+    parts.append(
+        "可继续按商品编号、名称、品牌或规格提问；参考目录仅说明该版本的记载，不自动作为现行制度。已导入资料保存在本机，重启软件可以继续使用。"
+    )
+    return "\n\n".join(parts)
+
+
 def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
     async def route(state):
         query = state["user_query"]
@@ -95,6 +179,12 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                 "strategy": RetrievalStrategy.DIRECT,
             }
         catalog = Catalog.load(settings.jiahui_data_dir)
+        if is_overview_query(query):
+            return {
+                **result,
+                "final_answer": overview_answer(catalog, retriever, scopes),
+                "strategy": RetrievalStrategy.DIRECT,
+            }
         rows = catalog.search(query, scopes)
         if rows:
             chunks = [record_chunk(row) for row in rows]
@@ -111,14 +201,17 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                     + choices,
                     "citations": citations(chunks[:20]),
                 }
-            specs = [
-                r for r in rows if r.get("spec") and spec_selected(r["spec"], query)
-            ]
+            specs = [r for r in rows if r.get("spec") and spec_selected(r["spec"], query)]
             if len(specs) == 1 and not any(x in query for x in ("比较", "对比", "分别", "有哪些")):
                 rows, chunks = specs, [record_chunk(specs[0])]
             answer = "以下为已录入资料的结构化查询结果（非模型生成）：\n\n" + "\n\n".join(
                 f"### {r['name']}\n{Catalog.to_document(r)}" for r in rows[:12]
             )
+            if any(r.get("status") == "reference" for r in rows):
+                answer = (
+                    "以下包含PDF参考目录记录，仅反映来源版本的原文记载，现行有效性待确认。\n\n"
+                    + answer
+                )
             if len(rows) > 12:
                 answer += f"\n共匹配{len(rows)}条，当前显示12条；请补充品牌或规格缩小范围。"
             if len(rows) == 1 and any(
@@ -139,16 +232,12 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
         recalled = await retriever.search_scoped(query, retriever.knowledge(scopes))
         ranked = await reranker.rerank(query, recalled, top_n=4)
         if not ranked:
-            prefix = (
-                "尚未录入产品资料。"
-                if not catalog.visible_records(scopes) and "products" in scopes
-                else ""
-            )
-            return {
-                **result,
-                "final_answer": prefix
-                + "未在当前账号可访问、已启用的嘉惠资料中找到依据，可能尚未录入或需要确认。不会采用电商演示政策作为嘉惠制度。",
-            }
+            docs = retriever.knowledge_documents(scopes)
+            if docs or catalog.visible_records(scopes):
+                message = f"知识库已接入 {len({d['source_file'] for d in docs})} 份来源、{len(docs)} 页/章节，以及 {len(catalog.visible_records(scopes))} 条产品目录记录；这次未找到依据：对应商品可能尚未录入或需要确认。请提供具体商品名称、编号、品牌或规格。也可以问“有哪些资料”查看已入库内容。"
+            else:
+                message = "尚未录入产品资料。当前账号没有可查询的已启用目录或知识资料，请在资料管理中导入，或由管理员检查资料状态及权限。"
+            return {**result, "final_answer": message}
         missing_field = next(
             (
                 field

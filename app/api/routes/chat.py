@@ -68,22 +68,29 @@ async def business_profile(
         except HTTPException as exc:
             if exc.status_code != 401:
                 raise
-    count = (
-        len(Catalog.load(container.settings.jiahui_data_dir).visible_records(set(principal.scopes)))
+    knowledge_stats = {
+        "knowledge_document_count": 0,
+        "knowledge_file_count": 0,
+        "reference_document_count": 0,
+    }
+    rows = (
+        Catalog.load(container.settings.jiahui_data_dir).visible_records(set(principal.scopes))
         if principal
-        else 0
+        else []
     )
-    status = "尚未录入产品资料" if not count else f"当前可访问 {count} 条产品资料"
-    if (
-        jiahui
-        and principal is not None
-        and not count
-        and isinstance(container.retriever, ScopedRetriever)
-        and container.retriever.knowledge(principal.scopes)
-    ):
-        status = "尚未录入产品资料（结构化目录）；可查询参考原文，现行有效性待确认。"
+    count = len(rows)
+    reference_count = sum(row.get("status") == "reference" for row in rows)
+    if jiahui and principal is not None and isinstance(container.retriever, ScopedRetriever):
+        knowledge_stats = container.retriever.knowledge_stats(principal.scopes)
+    status = (
+        "尚未录入产品资料"
+        if not count
+        else f"可查询产品目录 {count} 条（参考目录 {reference_count} 条）"
+    )
+    if knowledge_stats["knowledge_document_count"]:
+        status = f"知识库已接入 {knowledge_stats['knowledge_file_count']} 份来源、{knowledge_stats['knowledge_document_count']} 页/章节；可查询产品目录 {count} 条（参考目录 {reference_count} 条，现行有效性待确认）"
     if jiahui and principal is None:
-        status = "请登录后查看产品资料"
+        status = "请登录后查看资料与产品目录"
     caps = getattr(
         container,
         "model_capabilities",
@@ -101,6 +108,8 @@ async def business_profile(
             if jiahui
             else ["如何申请退货？", "查询订单ORD10001", "商品有哪些规格？"],
             "product_count": count,
+            "reference_product_count": reference_count,
+            **knowledge_stats,
             "catalog_status": status,
             "capabilities": caps,
         },

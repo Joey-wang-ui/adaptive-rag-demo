@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { BusinessStatus, capabilityLabels } from "./BusinessStatus";
+import { BusinessStatus, capabilityLabels, catalogSummary } from "./BusinessStatus";
 import type { BusinessProfile } from "../types";
 
 const profile: BusinessProfile = {
@@ -29,5 +29,20 @@ describe("Jiahui readiness presentation", () => {
     expect(capabilityLabels({ llm: "unavailable", embedding: "", reranker: "unknown" })).toEqual([
       "生成模型状态：unavailable", "Embedding 状态：未核验", "重排序状态：unknown",
     ]);
+  });
+});
+
+describe("knowledge and structured product counts", () => {
+  it("does not call a populated reference knowledge base empty when product count is zero", () => {
+    const populated = { ...profile, knowledge_file_count: 1, knowledge_document_count: 22, reference_document_count: 22 };
+    const summary = catalogSummary(populated);
+    expect(summary).toContain("知识库已接入 1 份资料，22 页/章节，可直接提问");
+    expect(summary).toContain("尚未建立可查询产品目录");
+    expect(summary).not.toContain("尚未录入产品资料");
+    expect(renderToStaticMarkup(<BusinessStatus profile={populated} />)).toContain("现行有效性待确认");
+  });
+  it("keeps visible product records and authorized reference knowledge separate", () => {
+    expect(catalogSummary({ ...profile, product_count: 3, knowledge_file_count: 2, knowledge_document_count: 8 })).toContain("可查询产品目录 3 条");
+    expect(catalogSummary({ ...profile, knowledge_file_count: 0, knowledge_document_count: 0, catalog_status: "无资料访问权限" })).toBe("无资料访问权限");
   });
 });

@@ -27,10 +27,9 @@ from app.jiahui.auth import (
     check_same_origin,
     current_principal,
 )
-from app.jiahui.catalog import FIELDS, Catalog
+from app.jiahui.catalog import FIELDS, Catalog, allowed
 from app.jiahui.graph import build_jiahui_graph
 from app.jiahui.import_catalog import import_csv
-from app.jiahui.import_knowledge import import_knowledge
 from app.jiahui.runtime import probe_capabilities
 from app.jiahui.vault import credential_vault
 from app.main import create_app
@@ -108,6 +107,16 @@ def create_desktop_app(home: Path, data_dir: Path, bootstrap_token: str = "", va
     router = APIRouter(prefix="/desktop", tags=["desktop"])
     setup_lock, model_lock = asyncio.Lock(), asyncio.Lock()
     store = AuthStore(data_dir)
+    from app.jiahui.guides import install_usage_guide
+    from app.jiahui.pdf_catalog import repair_pdf_catalogs
+
+    install_usage_guide(data_dir)
+    repair_report = repair_pdf_catalogs(data_dir)
+    if repair_report.get("warnings"):
+        logger.warning(
+            "desktop_catalog_repair_warning",
+            extra={"warning_count": len(repair_report["warnings"])},
+        )
 
     async def admin(request: Request) -> Principal:
         check_same_origin(request)
@@ -173,15 +182,49 @@ def create_desktop_app(home: Path, data_dir: Path, bootstrap_token: str = "", va
         request: Request, response: Response, principal: Principal = Depends(admin)
     ):
         container = request.app.state.container
-        records = Catalog.load(data_dir).records
+        scopes = set(principal.scopes)
+        catalog = Catalog.load(data_dir)
+        records = catalog.visible_records(scopes)
+        stats = container.retriever.knowledge_stats(scopes)
         response.headers["Cache-Control"] = "no-store"
         return {
             "data_dir": str(data_dir),
             "api_key_configured": container.settings.llm_configured,
             "secure_storage": vault.persistent,
             "capabilities": container.model_capabilities,
-            "current_products": len(Catalog.load(data_dir).visible_records(set(principal.scopes))),
-            "draft_products": sum(r.get("status") == "draft" for r in records),
+            "current_products": sum(r.get("status") == "current" for r in records),
+            "reference_products": sum(r.get("status") == "reference" for r in records),
+            "product_count": len(records),
+            "draft_products": sum(
+                r.get("status") == "draft" and allowed(r, scopes) for r in catalog.records
+            ),
+            **stats,
+        }
+
+    @router.get("/documents")
+    async def documents(
+        request: Request, response: Response, principal: Principal = Depends(admin)
+    ):
+        response.headers["Cache-Control"] = "no-store"
+        entries = request.app.state.container.retriever.knowledge_documents(set(principal.scopes))
+        return {
+            "documents": [
+                {
+                    key: entry.get(key, "")
+                    for key in ("id", "title", "source_file", "location", "version", "status")
+                }
+                for entry in entries
+            ]
+        }
+
+    @router.post("/repair")
+    async def repair(request: Request, principal: Principal = Depends(admin)):
+        report = await asyncio.to_thread(repair_pdf_catalogs, data_dir)
+        rows = Catalog.load(data_dir).visible_records(set(principal.scopes))
+        return {
+            **report,
+            "product_count": len(rows),
+            "reference_products": sum(row.get("status") == "reference" for row in rows),
         }
 
     @router.post("/model")
@@ -226,7 +269,11 @@ def create_desktop_app(home: Path, data_dir: Path, bootstrap_token: str = "", va
             fields = list(reader.fieldnames)
             if "状态" not in fields:
                 fields.append("状态")
-            rows = list(reader)
+            rows = [
+                row for row in reader if any(value and str(value).strip() for value in row.values())
+            ]
+            if not rows:
+                raise ValueError("CSV只有表头或空白行，没有可导入的产品；请填写模板后再导入")
             for row in rows:
                 if None in row:
                     raise ValueError("CSV存在列数不一致的记录")
@@ -253,51 +300,17 @@ def create_desktop_app(home: Path, data_dir: Path, bootstrap_token: str = "", va
     @router.post("/import/pdf")
     async def pdf(payload: Upload, principal: Principal = Depends(admin)):
         try:
-            from pypdf import PdfReader
+            from app.jiahui.pdf_import import import_pdf
 
             name = safe_filename(payload.filename, ".pdf")
             content = base64.b64decode(payload.content, validate=True)
-            if len(content) > 15 * 1024 * 1024:
-                raise ValueError("PDF最大15MB")
-            document = PdfReader(io.BytesIO(content))
-            if document.is_encrypted:
-                raise ValueError("请先提供未加密PDF")
-            if len(document.pages) > 300:
-                raise ValueError("单份PDF最多300页，请按章节拆分")
-            # Extract every page first. A scanned page cannot silently disappear.
-            pages = [page.extract_text(extraction_mode="layout") or "" for page in document.pages]
-            if not pages or any(not text.strip() for text in pages):
-                raise ValueError("PDF存在无法读取文字的页面；扫描件需先OCR核对，未自动导入")
-            digest = hashlib.sha256(content).hexdigest()
-            root = data_dir / "sources" / "pdf" / digest
-            root.mkdir(parents=True, exist_ok=True)
-            original = root / name
-            if not original.exists():
-                original.write_bytes(content)
-            changed = 0
-            for page, text in enumerate(pages, 1):
-                source = root / f"page-{page:03d}.txt"
-                if not source.exists():
-                    source.write_text(text, encoding="utf-8")
-                result = await asyncio.to_thread(
-                    import_knowledge,
-                    source,
-                    data_dir,
-                    document_id=f"pdf-{digest[:24]}-p{page}",
-                    version=payload.version,
-                    location=f"PDF第{page}页",
-                    status="reference",
-                    scope="products",
-                    title=f"{name} · 第{page}页",
-                    source_file=name,
-                )
-                changed += bool(result["changed"])
-            return {
-                "pages": len(pages),
-                "changed_pages": changed,
-                "status": "reference",
-                "message": "已按页导入参考原文；现行有效性待确认，未自动生成SKU或食品属性。",
-            }
+            result = await asyncio.to_thread(
+                import_pdf, content, data_dir, filename=name, version=payload.version
+            )
+            visible = Catalog.load(data_dir).visible_records(set(principal.scopes))
+            result["reference_products"] = sum(row.get("status") == "reference" for row in visible)
+            result["product_count"] = len(visible)
+            return result
         except (ValueError, UnicodeError) as exc:
             raise HTTPException(400, detail=str(exc)) from None
         except ImportError:

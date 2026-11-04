@@ -29,7 +29,7 @@ FIELDS = {
     "有效日期": "effective_date",
 }
 EXTRA_FIELDS = {"状态": "status", "访问范围": "scope"}
-VALID_STATUSES = {"current", "historical", "draft"}
+VALID_STATUSES = {"current", "reference", "historical", "draft"}
 
 
 def normalized(value: str) -> str:
@@ -90,7 +90,7 @@ class Catalog:
             dict(row)
             for row in self.records
             if allowed(row, scopes)
-            and (include_history or row.get("status") == "current")
+            and (include_history or row.get("status") in {"current", "reference"})
             and (include_history or not row.get("effective_date") or row["effective_date"] <= today)
         ]
 

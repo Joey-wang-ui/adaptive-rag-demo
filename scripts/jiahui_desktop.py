@@ -220,6 +220,7 @@ def run_gui(home: Path):
     ensure_webview_runtime()
     import webview
 
+    webview.settings["ALLOW_DOWNLOADS"] = True
     runtime = DesktopRuntime(home)
     with InstanceLock(home):
         window = webview.create_window(

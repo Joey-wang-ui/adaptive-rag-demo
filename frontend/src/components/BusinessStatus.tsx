@@ -11,10 +11,21 @@ export function capabilityLabels(capabilities: BusinessProfile["capabilities"]):
   ];
 }
 
+export function catalogSummary(profile: BusinessProfile): string {
+  const documents = profile.knowledge_document_count ?? 0;
+  const files = profile.knowledge_file_count;
+  if (documents > 0) {
+    const knowledge = `知识库已接入 ${files ? `${files} 份资料，` : ""}${documents} 页/章节，可直接提问`;
+    const catalog = profile.product_count > 0 ? `可查询产品目录 ${profile.product_count} 条${profile.reference_product_count ? `（参考目录 ${profile.reference_product_count} 条）` : ""}` : "尚未建立可查询产品目录";
+    return `${knowledge}；${catalog}。`;
+  }
+  return profile.catalog_status || (profile.product_count === 0 ? "尚未录入产品资料" : `可查询产品资料：${profile.product_count} 条`);
+}
+
 export function BusinessStatus({ profile }: { profile: BusinessProfile }) {
   return <aside className="business-status" aria-label="嘉惠资料与模型状态">
-    <strong>{profile.catalog_status || (profile.product_count === 0 ? "尚未录入产品资料" : `可查询产品资料：${profile.product_count} 条`)}</strong>
-    <span>第一版仅查询资料；价格、库存和订单尚未接入业务数据。</span>
+    <strong>{catalogSummary(profile)}</strong>
+    <span>{(profile.reference_document_count ?? 0) > 0 && `其中 ${profile.reference_document_count} 页/章节为参考资料，现行有效性待确认。`}第一版仅查询资料；价格、库存和订单尚未接入业务数据。</span>
     <div>{capabilityLabels(profile.capabilities).map((label) => <span key={label}>{label}</span>)}</div>
   </aside>;
 }

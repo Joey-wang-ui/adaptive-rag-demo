@@ -60,7 +60,7 @@ def parse_csv(
     path: Path, *, status: str = "draft", scope: str = "products"
 ) -> list[dict[str, Any]]:
     if status not in VALID_STATUSES:
-        raise ValueError("资料状态必须为 current、historical 或 draft")
+        raise ValueError("资料状态必须为 current、reference、historical 或 draft")
     raw = path.read_bytes()
     if len(raw) > 15 * 1024 * 1024:
         raise ValueError("CSV 最大允许15MB")

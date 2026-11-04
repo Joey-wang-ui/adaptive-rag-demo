@@ -43,6 +43,9 @@ def main():
         "clr_loader",
         "jieba",
         "pypdf",
+        "pdfplumber",
+        "pdfminer",
+        "pypdfium2",
         "uvicorn",
         "sse_starlette",
         "certifi",
@@ -63,6 +66,7 @@ def main():
         command += ["--copy-metadata", package]
     for module in [
         "scripts.jiahui_desktop_selftest",
+        "scripts.jiahui_pdf_fixture",
         "aiosqlite",
         "asyncpg",
         "sqlalchemy.dialects.sqlite.aiosqlite",

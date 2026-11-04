@@ -121,6 +121,33 @@ def self_test():
                 _, body = request("/api/v1/business/prices?identifier=00001")
                 assert json.loads(body)["message"] == "尚未接入业务数据"
                 checks["unconnected_erp"] = True
+                import base64
+
+                from scripts.jiahui_pdf_fixture import synthetic_catalog_pdf
+
+                pdf_upload = {
+                    "filename": "isolated-catalog.pdf",
+                    "content": base64.b64encode(synthetic_catalog_pdf()).decode(),
+                    "version": "TEST-reference",
+                }
+                _, payload = request("/api/v1/desktop/import/pdf", pdf_upload)
+                imported = json.loads(payload)
+                assert imported["catalog_imported"] == 2 and imported["imported_pages"] == 1
+                _, payload = request("/api/v1/chat", {"message": "编号00009"})
+                assert "请先选择" in json.loads(payload)["answer"]
+                _, payload = request("/api/v1/chat", {"message": "没资料吗"})
+                assert "有资料" in json.loads(payload)["answer"]
+                checks["real_pdf_import_and_catalogue_query"] = True
+                runtime.stop()
+                runtime = DesktopRuntime(home)
+                runtime.start(timeout=90)
+                base = runtime.url
+                request("/api/v1/auth/login", {"username": "package-test", "password": password})
+                _, payload = request("/api/v1/desktop/import/pdf", pdf_upload)
+                assert not json.loads(payload)["catalog_changed"]
+                _, payload = request("/api/v1/profile")
+                assert json.loads(payload)["product_count"] == 3
+                checks["restart_and_repeat_import_reuse_without_duplicates"] = True
                 if os.name == "nt":
                     vault = WindowsVault(home)
                     secret = secrets.token_urlsafe(32)

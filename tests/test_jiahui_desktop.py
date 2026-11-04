@@ -181,7 +181,9 @@ def test_pdf_import_retains_pages_reference_status_and_idempotency(desktop):
         and "PDF第1页" in chunks[0].section
         and chunks[0].metadata["status"] == "reference"
     )
-    assert not client.app.state.container.retriever.knowledge({"knowledge"})
+    knowledge_only = client.app.state.container.retriever.knowledge({"knowledge"})
+    assert all("AI整理" in chunk.title for chunk in knowledge_only)
+    assert not any(chunk.metadata.get("source_file") == "isolated.pdf" for chunk in knowledge_only)
     assert Path(settings.jiahui_data_dir).is_dir()
 
 

@@ -8,7 +8,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from app.jiahui.catalog import Catalog
+from app.jiahui.catalog import Catalog, normalized
 from app.retrieval.bm25 import BM25Retriever
 from app.retrieval.hybrid import HybridRetriever
 from app.retrieval.tokenizer import tokenize
@@ -22,6 +22,24 @@ EXAMPLES = [
     "这款产品的保质期是否已录入？",
     "这份资料是什么版本，是否已确认有效？",
 ]
+
+
+def text_chunks(text: str, target: int = 2200) -> list[str]:
+    """Keep table rows and nearby lines together instead of slicing through cells."""
+    chunks: list[str] = []
+    lines: list[str] = []
+    length = 0
+    for line in text.splitlines(keepends=True):
+        if lines and length + len(line) > target:
+            chunks.append("".join(lines))
+            overlap = lines[-2:]
+            lines = overlap if sum(map(len, overlap)) < target // 2 else []
+            length = sum(map(len, lines))
+        lines.append(line)
+        length += len(line)
+    if lines and "".join(lines).strip():
+        chunks.append("".join(lines))
+    return chunks
 
 
 class ScopedRetriever:
@@ -55,8 +73,7 @@ class ScopedRetriever:
             if not path.is_relative_to(root) or path.suffix.lower() not in {".md", ".txt"}:
                 raise ValueError("知识文档必须位于独立知识目录内")
             text = path.read_text(encoding="utf-8")
-            for offset in range(0, len(text), 2200):
-                content = text[offset : offset + 2200]
+            for offset, content in enumerate(text_chunks(text)):
                 if not content.strip():
                     continue
                 key = hashlib.sha256(
@@ -73,10 +90,36 @@ class ScopedRetriever:
                         score=0,
                         section=f"{item.get('source_file', path.name)} · {location} · 版本 {version} · {status}",
                         policy_version=version,
-                        metadata={"status": status, "scope": item.get("scope", "knowledge")},
+                        metadata={
+                            "status": status,
+                            "scope": item.get("scope", "knowledge"),
+                            "source_file": item.get("source_file", path.name),
+                            "location": location,
+                        },
                     )
                 )
         return chunks
+
+    def knowledge_documents(self, scopes) -> list[dict[str, str]]:
+        documents = {}
+        for chunk in self.knowledge(scopes):
+            documents[(chunk.document_id, chunk.policy_version)] = {
+                "id": chunk.document_id,
+                "title": chunk.title,
+                "source_file": chunk.metadata.get("source_file", chunk.title),
+                "location": chunk.metadata.get("location", chunk.section or "位置未提供"),
+                "version": chunk.policy_version,
+                "status": chunk.metadata.get("status", "reference"),
+            }
+        return list(documents.values())
+
+    def knowledge_stats(self, scopes) -> dict[str, int]:
+        documents = self.knowledge_documents(scopes)
+        return {
+            "knowledge_document_count": len(documents),
+            "knowledge_file_count": len({d["source_file"] for d in documents}),
+            "reference_document_count": sum(d["status"] == "reference" for d in documents),
+        }
 
     async def search_scoped(self, query, chunks, *, top_k=8):
         if not chunks:
@@ -88,11 +131,16 @@ class ScopedRetriever:
         if explicit_code:
             code = explicit_code.group(1)
             anchor = re.compile(
-                r"(?<![A-Za-z0-9_*.-])" + re.escape(code) + r"(?![A-Za-z0-9_*.-])", re.IGNORECASE
+                r"(?<![A-Za-z0-9_*.-])"
+                + r"\s*".join(re.escape(c) for c in code)
+                + r"(?![A-Za-z0-9_*.-])",
+                re.IGNORECASE,
             )
             relevant = [c for c in chunks if anchor.search(c.content)]
         else:
-            relevant = [c for c in chunks if any(t in c.content for t in tokens)]
+            relevant = [
+                c for c in chunks if any(normalized(t) in normalized(c.content) for t in tokens)
+            ]
         if not relevant:
             return []
         vectors = await self.embedder.embed([c.content for c in relevant])

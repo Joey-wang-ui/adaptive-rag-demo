@@ -69,7 +69,12 @@ export interface BusinessProfile {
   welcome: string;
   examples: string[];
   product_count: number;
+  reference_product_count?: number;
+  current_product_count?: number;
   catalog_status: string;
+  knowledge_document_count?: number;
+  knowledge_file_count?: number;
+  reference_document_count?: number;
   capabilities: { llm: string; embedding: string; reranker: string };
 }
 
@@ -90,5 +95,30 @@ export interface DesktopSettings {
   secure_storage: boolean;
   capabilities: BusinessProfile["capabilities"];
   current_products: number;
+  reference_products?: number;
+  product_count?: number;
   draft_products: number;
+  knowledge_document_count?: number;
+  knowledge_file_count?: number;
+  reference_document_count?: number;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  title: string;
+  source_file: string;
+  location: string;
+  version: string;
+  status: string;
+}
+export interface ImportResult {
+  imported?: number;
+  total?: number;
+  pages?: number;
+  imported_pages?: number;
+  catalog_imported?: number;
+  reference_products?: number;
+  catalog_changed?: boolean;
+  skipped_pages?: { page: number; reason: string }[];
+  message?: string;
 }
