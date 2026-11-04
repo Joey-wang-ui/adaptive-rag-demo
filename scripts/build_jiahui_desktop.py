@@ -97,6 +97,14 @@ def main():
     (destination / "START.cmd").write_text(
         '@echo off\r\ncd /d "%~dp0"\r\nstart "" "%~dp0JiahuiAssistant.exe"\r\n', encoding="ascii"
     )
+    (destination / "恢复账号.cmd").write_text(
+        '@echo off\r\ncd /d "%~dp0"\r\nstart "" "%~dp0JiahuiAssistant.exe" --recover-account\r\n',
+        encoding="ascii",
+    )
+    (destination / "检查账号和资料目录.cmd").write_text(
+        '@echo off\r\ncd /d "%~dp0"\r\nstart "" "%~dp0JiahuiAssistant.exe" --select-data\r\n',
+        encoding="ascii",
+    )
     print(destination)
 
 

@@ -70,7 +70,8 @@ def data_directory(home: Path) -> Path:
     if prefs.exists():
         value = json.loads(prefs.read_text(encoding="utf-8")).get("data_dir")
         if value:
-            return Path(value).expanduser().resolve()
+            selected = Path(value).expanduser()
+            return (selected if selected.is_absolute() else home / selected).resolve()
     return home / "data"
 
 
@@ -224,7 +225,7 @@ def run_gui(home: Path):
     runtime = DesktopRuntime(home)
     with InstanceLock(home):
         window = webview.create_window(
-            "嘉惠 · 内部业务助手",
+            "嘉惠 · 内部业务助手 v1.1.3",
             html=loading_html(),
             width=1240,
             height=840,
@@ -293,12 +294,49 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--recover-account", action="store_true")
+    parser.add_argument("--select-data", action="store_true")
     parser.add_argument("--home")
     parser.add_argument("--data-dir")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
     if args.serve:
         run_server(args)
+    elif args.recover_account or args.select_data:
+        home = Path(args.home).resolve() if args.home else default_home()
+        try:
+            with InstanceLock(home):
+                from app.jiahui.recovery import run_data_selection, run_recovery
+
+                if args.select_data:
+                    run_data_selection(home, data_directory(home))
+                else:
+                    run_recovery(data_directory(home))
+        except AlreadyRunningError:
+            from tkinter import Tk, messagebox
+
+            root = Tk()
+            root.withdraw()
+            messagebox.showinfo(
+                "请先关闭嘉惠助手",
+                "请先关闭正在运行的嘉惠助手，然后重新打开账号恢复或资料目录检查入口。资料和Key不会被清空。",
+                parent=root,
+            )
+            root.destroy()
+        except Exception as exc:
+            from tkinter import Tk, messagebox
+
+            root = Tk()
+            root.withdraw()
+            messagebox.showerror(
+                "本机账号检查未完成",
+                str(exc)
+                if isinstance(exc, ValueError | RuntimeError)
+                else "无法读取本机账号资料，请检查目录权限。未重置账号；请保留原资料和配置备份。",
+                parent=root,
+            )
+            root.destroy()
+            raise SystemExit(1) from None
     elif args.self_test:
         from scripts.jiahui_desktop_selftest import self_test
 

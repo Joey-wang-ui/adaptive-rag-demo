@@ -92,25 +92,27 @@ function Workspace({ profile, principal, onLogout, desktop, onUpdated }: { profi
   </div>;
 }
 
-function LoginForm({ profile, onLogin }: { profile: BusinessProfile; onLogin: (principal: Principal) => Promise<void> }) {
+function LoginForm({ profile, onLogin, version }: { profile: BusinessProfile; onLogin: (principal: Principal) => Promise<void>; version?: string }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return <main className="login-shell"><section className="login-story"><div className="jiahui-wordmark"><span><Leaf size={24} /></span><b>嘉惠<span>JIAHUI WORKSPACE</span></b></div><div><span className="eyebrow">你的食品原料业务伙伴</span><h2>工作里的每个问题，<br />都值得一个靠谱答案。</h2><p>让产品资料更好查，让业务核实更从容。</p><span className="login-proof"><ShieldCheck size={16} />仅使用获授权的业务资料</span></div><small>杭州嘉惠食品有限公司</small></section><form className="login-card" onSubmit={(event) => {
     event.preventDefault();
     if (busy) return;
     setBusy(true); setError("");
-    void login(username, password).then(onLogin).catch((reason: unknown) => {
+    void login(username.trim(), password).then(onLogin).catch((reason: unknown) => {
       setError(reason instanceof AuthenticationError ? "账号或密码不正确，或账号已停用。" : reason instanceof Error ? reason.message : "登录失败，请稍后重试。");
-    }).finally(() => { setPassword(""); setBusy(false); });
+    }).finally(() => { setBusy(false); });
   }}><Logo /><h1>{profile.name}</h1><p>{profile.welcome}</p>
-    <p>请使用管理员初始化的内部账号登录。</p>
+    <p>请使用首次创建的账号和密码，软件没有预设的 admin 密码。</p>
     <label>账号<input required autoComplete="username" value={username} maxLength={128} onChange={(event) => setUsername(event.target.value)} /></label>
-    <label>密码<input required type="password" autoComplete="current-password" value={password} maxLength={1024} onChange={(event) => setPassword(event.target.value)} /></label>
+    <label>密码<input required type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} maxLength={1024} onChange={(event) => setPassword(event.target.value)} /></label>
+    <label className="login-show-password"><input type="checkbox" checked={showPassword} onChange={(event) => setShowPassword(event.target.checked)} />显示密码</label>
     {error && <p className="login-error" role="alert">{error}</p>}
     <button type="submit" disabled={busy}>{busy ? "登录中…" : "登录"}</button>
-    <small>第一版提供资料查询；价格、库存和订单尚未接入业务数据。</small>
+    <details className="login-recovery-help"><summary>升级后原账号无法登录？查看本机检查步骤</summary><p>先关闭软件，双击同目录的“检查账号和资料目录.cmd”，核对原资料目录和已有账号。这不会修改原密码。</p><p>仅在确需重设密码时使用“恢复账号.cmd”，会保留资料、Key和岗位权限。</p></details><small>{version && `桌面版 ${version}`}</small>
   </form></main>;
 }
 
@@ -183,7 +185,7 @@ function App() {
   if (error) return <main className="login-shell"><div className="login-card" role="alert"><h1>服务暂时不可用</h1><p>{error}</p><button onClick={() => window.location.reload()}>重新连接</button></div></main>;
   if (!ready || !profile) return <main className="login-shell" role="status">正在连接服务…</main>;
   if (desktop?.setup_required && !principal) return <DesktopSetup token={setupToken} status={desktop} onReady={async (user) => { const next = await getProfile(); setProfile(next); setPrincipal(user); setDesktop({ ...desktop, setup_required: false }); }} />;
-  if (profile.mode === "jiahui" && !principal) return <LoginForm profile={profile} onLogin={async (user) => {
+  if (profile.mode === "jiahui" && !principal) return <LoginForm profile={profile} version={desktop?.version} onLogin={async (user) => {
     const next = await getProfile(); setProfile(next); setPrincipal(user); channelRef.current?.postMessage("signed-in");
   }} />;
   return <Workspace key={`${profile.mode}:${JSON.stringify(principal ?? "demo")}`} profile={profile} principal={principal} onLogout={() => void signOut()} desktop={desktop?.desktop ?? false} onUpdated={async () => setProfile(await getProfile())} />;

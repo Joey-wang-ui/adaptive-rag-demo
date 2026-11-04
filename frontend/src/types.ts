@@ -85,6 +85,7 @@ export interface Principal {
 }
 
 export interface DesktopStatus {
+  version?: string;
   desktop: boolean;
   setup_required: boolean;
   secure_storage: boolean;

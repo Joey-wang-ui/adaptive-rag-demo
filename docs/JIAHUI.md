@@ -1,6 +1,6 @@
 # 嘉惠内部业务助手第一版
 
-**日常使用请下载[Windows完整软件包](https://github.com/Joey-wang-ui/adaptive-rag-demo/releases/download/jiahui-desktop-v1.1.2/JiahuiAssistant-Windows-x64.zip)，完整解压后双击 `JiahuiAssistant.exe` 或 `START.cmd`。首次在软件窗口里创建账号、填写Key，以后直接打开使用。无需安装Python/Node，也不用执行下面的源码部署命令。**
+**日常使用请下载[Windows完整软件包](https://github.com/Joey-wang-ui/adaptive-rag-demo/releases/download/jiahui-desktop-v1.1.3/JiahuiAssistant-Windows-x64.zip)，完整解压后双击 `JiahuiAssistant.exe` 或 `START.cmd`。首次在软件窗口里创建账号、填写Key，以后直接打开使用。升级登录异常先关闭软件并运行包内 `检查账号和资料目录.cmd` 核对原目录和账号，不会重置原密码。无需安装Python/Node，也不用执行下面的源码部署命令。**
 
 桌面版操作见[使用说明](../desktop/使用说明.md)。以下内容主要面向源码开发与维护。
 

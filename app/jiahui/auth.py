@@ -118,6 +118,40 @@ class AuthStore:
         with self._connect() as db:
             return db.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
 
+    def local_accounts(self) -> list[dict[str, Any]]:
+        """Local maintenance only: never return password hashes, salts or tokens."""
+        with self._connect() as db:
+            return [
+                dict(row)
+                for row in db.execute("SELECT username,role,active FROM users ORDER BY username")
+            ]
+
+    def reset_password(self, username: str, password: str) -> None:
+        """Offline owner recovery, not an HTTP endpoint or a role-change operation."""
+        if not 12 <= len(password) <= 1024:
+            raise ValueError("新密码至少12位，最多1024位")
+        with self._connect() as db:
+            row = db.execute("SELECT active FROM users WHERE username=?", (username,)).fetchone()
+        if row is None:
+            raise ValueError("账号不存在，请选择实际已创建的账号")
+        if not row["active"]:
+            raise ValueError("该账号已停用，不能通过重置密码启用；请联系管理员")
+        self.backup()
+        salt = secrets.token_bytes(16)
+        hashed = _password_hash(password, salt)
+        with self._connect() as db:
+            cursor = db.execute(
+                "UPDATE users SET salt=?,password_hash=? WHERE username=? AND active=1",
+                (salt.hex(), hashed, username),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("账号状态已变化，请联系管理员")
+            db.execute("DELETE FROM sessions WHERE username=?", (username,))
+            buckets = ["user:" + username, "client:127.0.0.1", "client:::1", "client:desktop-setup"]
+            db.executemany(
+                "DELETE FROM login_attempts WHERE bucket=?", [(_token_hash(b),) for b in buckets]
+            )
+
     @staticmethod
     def _validate_access(role: str, scopes: frozenset[str]) -> None:
         if role not in ROLE_SCOPES:
@@ -256,21 +290,23 @@ async def current_principal(request: Request) -> Principal:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="嘉惠账号管理；密码仅通过隐藏输入获取")
-    parser.add_argument("command", choices=["create-user", "set-access"])
+    parser.add_argument("command", choices=["create-user", "set-access", "reset-password"])
     parser.add_argument("--username", required=True)
-    parser.add_argument("--role", choices=sorted(ROLE_SCOPES), required=True)
+    parser.add_argument("--role", choices=sorted(ROLE_SCOPES))
     parser.add_argument(
         "--scopes", help="逗号分隔的权限标签；默认标签：" + ",".join(sorted(SCOPES))
     )
     parser.add_argument("--data-dir")
     parser.add_argument("--disable", action="store_true", help="set-access 时禁用账号")
     args = parser.parse_args()
+    if args.command != "reset-password" and args.role is None:
+        parser.error("创建账号或设置权限时需要 --role")
     if args.data_dir is None:
         from app.config.settings import get_settings
 
         args.data_dir = getattr(get_settings(), "jiahui_data_dir", "data/jiahui")
     access = (
-        ROLE_SCOPES[args.role]
+        ROLE_SCOPES.get(args.role, frozenset())
         if args.scopes is None
         else frozenset(filter(None, args.scopes.split(",")))
     )
@@ -288,6 +324,14 @@ def main() -> None:
                 parser.error("两次密码不一致")
             created = store.create_user(args.username, password, args.role, access)
             print("账号已创建。" if created else "账号已存在，未覆盖。")
+        elif args.command == "reset-password":
+            if not sys.stdin.isatty():
+                parser.error("请在本机交互终端恢复账号，密码必须隐藏输入")
+            password = getpass.getpass("新密码（至少12位）：")
+            if password != getpass.getpass("再次输入新密码："):
+                parser.error("两次密码不一致")
+            store.reset_password(args.username, password)
+            print("密码已更新，旧登录已失效；资料、Key和岗位权限保持不变。")
         else:
             store.set_access(args.username, args.role, access, not args.disable)
             print("岗位/权限已更新，下一次请求立即生效。")

@@ -148,6 +148,17 @@ def self_test():
                 _, payload = request("/api/v1/profile")
                 assert json.loads(payload)["product_count"] == 3
                 checks["restart_and_repeat_import_reuse_without_duplicates"] = True
+                from app.jiahui.auth import AuthStore as LocalStore
+
+                local_store = LocalStore(home / "data")
+                # Recreating the runtime must retain the original password hash.
+                assert (
+                    local_store.principal(
+                        local_store.login("package-test", password, "upgrade-check")
+                    ).username
+                    == "package-test"
+                )
+                checks["upgrade_keeps_original_account_password"] = True
                 if os.name == "nt":
                     vault = WindowsVault(home)
                     secret = secrets.token_urlsafe(32)
@@ -157,6 +168,43 @@ def self_test():
                         checks["windows_credential_roundtrip"] = True
                     finally:
                         vault.delete()
+                    # Exercise the real packaged Tk recovery form with test data only.
+                    from unittest.mock import patch
+
+                    from app.jiahui.recovery import run_recovery
+
+                    runtime.stop()
+                    new_password = secrets.token_urlsafe(24)
+                    recovery_errors = []
+
+                    def automate_recovery(root, selected, field, confirmation, save):
+                        try:
+                            selected.set("package-test")
+                            field.set(new_password)
+                            confirmation.set(new_password)
+                            save()
+                        except Exception as exc:
+                            recovery_errors.append(type(exc).__name__)
+                            root.destroy()
+
+                    with (
+                        patch("tkinter.messagebox.showinfo"),
+                        patch(
+                            "tkinter.messagebox.showerror",
+                            side_effect=RuntimeError("recovery-form-error"),
+                        ),
+                    ):
+                        recovered = run_recovery(home / "data", on_ready=automate_recovery)
+                    assert recovered and not recovery_errors
+                    runtime = DesktopRuntime(home)
+                    runtime.start(timeout=90)
+                    base = runtime.url
+                    request(
+                        "/api/v1/auth/login", {"username": "package-test", "password": new_password}
+                    )
+                    _, payload = request("/api/v1/profile")
+                    assert json.loads(payload)["product_count"] == 3
+                    checks["native_recovery_form_preserves_catalogue_and_account"] = True
                     ensure_webview_runtime()
                     import webview
 
