@@ -174,3 +174,13 @@ CSV对比和换算回答为程序根据结构化字段生成；知识问答在De
 本轮389项Python回归、14项前端测试、139个Python文件类型检查和前端构建通过。用户真实PDF仅在临时目录导入，33条固定常用问法及浏览器原始截图问法通过；17个可控无依据输出/错引用对抗场景通过。这些不能替代真实DeepSeek的统计幻觉率；云环境没有用户本机Key，真实模型幻觉率尚未测量。
 
 [Windows成品构建与原生窗口自检](https://github.com/Joey-wang-ui/adaptive-rag-demo/actions/runs/41798509170)包含产品追问、通用问答离线提示、模型状态、PDF导入复用、账号恢复及Edge窗口检查。实际下载v1.1.5成品已通过ZIP CRC与SHA-256校验；103,057,593字节，SHA-256：`c657fcb378dd7838b38cd82c3b3f07896ae95d5976294453be3838e976793e7b`。发布包不含业务PDF、账号数据库或Key。
+
+## v1.1.6 按次联网搜索验收
+
+已按用户提供的[Search接口文档](https://api-docs.deepseek.com/zh-cn/api/search)接入 `POST https://api.deepseek.com/v1/tools/search`，复用服务端DeepSeek Key；发送当前query、count=5、need_content=false，不附历史对话、内部知识、定位IP或额外原始问题字段。输入框开关默认关闭，发送后自动关闭，服务端继续校验身份与知识访问权限。公开来源独立标识、可打开链接并显示查询及发布时间，不自动导入嘉惠正式知识库。Fetch尚未接入，不声称已抓取全文。
+
+总结先检查来源编号，再核对网页依据；失败时显示标明身份的实际搜索摘要。搜索请求不自动重试；生成和依据检查是两次模型逻辑调用，底层模型的失败重试沿用已有配置，可能增加请求次数。聊天连接成功不等于已取得Search权限，鉴权、额度、限流、超时和无结果均单独提示。
+
+437项Python回归（含48项新增搜索测试）、17项前端测试、140个Python文件类型检查和生产构建通过；33条原有真实目录问答复查通过。真实回环HTTP/SSE及Chromium验证开关作用范围、来源链接、搜索失败和Unicode字数限制。供应商接口使用MockTransport和合成来源验证契约，云端无用户真实Key，未实测收费搜索服务或真实模型幻觉率。
+
+[Windows构建与成品自检](https://github.com/Joey-wang-ui/adaptive-rag-demo/actions/runs/41803823030)通过，包含未配置Key时的联网提示、原生Edge窗口、账号恢复与资料复用。实际下载的v1.1.6成品已校验ZIP CRC和SHA-256；103,074,105字节，SHA-256：`8cbfd54e79d0eb0319c0955e1fd2d46953b3df6f03009b5c5782dc35a7b76b8f`。发布包不含业务PDF、账号库或Key。
