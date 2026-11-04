@@ -130,7 +130,7 @@ def create_desktop_app(home: Path, data_dir: Path, bootstrap_token: str = "", va
         response.headers["Cache-Control"] = "no-store"
         return {
             "desktop": True,
-            "version": "1.1.3",
+            "version": "1.1.4",
             "setup_required": not store.has_users(),
             "secure_storage": vault.persistent,
         }

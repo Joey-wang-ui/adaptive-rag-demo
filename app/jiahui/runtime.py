@@ -222,4 +222,5 @@ async def probe_capabilities(llm, retriever, reranker, settings):
 
         reranker._provider = LexicalRerankProvider()
         caps["reranker"] = "lexical"
+    retriever.capabilities = caps
     return caps

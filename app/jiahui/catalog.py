@@ -36,6 +36,15 @@ def normalized(value: str) -> str:
     return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value).casefold())
 
 
+def is_listing_query(message: str) -> bool:
+    if "有什么规格" in message:
+        return False
+    return any(
+        word in message
+        for word in ("有哪些", "有什么", "哪些", "哪几款", "几种", "几款", "列出", "所有")
+    )
+
+
 def spec_selected(spec: str, message: str) -> bool:
     """Match confirmed specs without confusing 5kg with 25kg or merging IDs."""
     value = normalized(spec)
@@ -145,6 +154,12 @@ class Catalog:
             if len(token) >= 3 and not quantity_unit:
                 return []
         stopwords = [
+            "帮我查下",
+            "帮我查",
+            "帮我看看",
+            "查下",
+            "我们有",
+            "咱们有",
             "请问",
             "查一下",
             "查询",
@@ -152,6 +167,13 @@ class Catalog:
             "商品",
             "资料",
             "有哪些",
+            "有什么",
+            "哪些",
+            "哪几款",
+            "几种",
+            "几款",
+            "所有",
+            "列出",
             "什么",
             "规格",
             "储存",
@@ -177,6 +199,11 @@ class Catalog:
         meaningful = query
         for word in stopwords:
             meaningful = meaningful.replace(word, "")
+        # Query vocabulary only: never write inferred categories into product data.
+        # Catalogues often label liquid egg products as 杀菌蛋黄/蛋白 without 液.
+        egg_family = "蛋液" in meaningful and not any(
+            x in meaningful for x in ("蛋黄液", "蛋白液", "全蛋液")
+        )
         ranked = []
         for row in rows:
             names = [row.get("name", ""), *row.get("aliases", [])]
@@ -185,6 +212,8 @@ class Catalog:
                 text = normalized(value)
                 if not text:
                     continue
+                if egg_family and re.search(r"蛋液|蛋[黄白]液|全蛋液|杀菌蛋[黄白](?!粉)", text):
+                    score = max(score, 85)
                 if text in query:
                     score = max(score, 100 + len(text))
                 elif meaningful and len(meaningful) > 1 and meaningful in text:
@@ -211,8 +240,8 @@ class Catalog:
 
     @staticmethod
     def needs_clarification(records: list[dict[str, Any]], message: str) -> bool:
-        if any(
-            word in message for word in ("对比", "比较", "区别", "差别", "有哪些", "列出", "分别")
+        if is_listing_query(message) or any(
+            word in message for word in ("对比", "比较", "区别", "差别", "分别")
         ):
             return False
         identities = {(r["id"], r.get("spec", "")) for r in records}

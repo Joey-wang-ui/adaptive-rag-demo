@@ -304,3 +304,36 @@ def test_business_adapter_and_admin_introspection_enforce_same_server_scopes(env
         assert tools.status_code == 200
         assert tools.json()["tools"] == []
         assert client.get("/api/v1/business/refund").status_code == 404
+
+
+def test_colloquial_egg_listing_and_model_status_use_correct_source(environment, tmp_path):
+    root, settings, _, password = environment
+    names = [
+        "（测试）巴氏杀菌蛋黄液",
+        "（测试）巴氏杀菌蛋白 G型",
+        "（测试）巴氏杀菌全蛋液",
+        "（测试）蛋白粉",
+    ]
+    import_products(
+        root,
+        tmp_path / "eggs.csv",
+        [
+            product(f"egg-{i}", 名称=name, 商品编号=f"0000{i}", 规格="")
+            for i, name in enumerate(names)
+        ],
+    )
+    with TestClient(create_app(settings)) as client:
+        login(client, password)
+        for query in ["帮我查下蛋液有哪些", "蛋液有什么", "帮我看看哪些蛋液"]:
+            answer = chat(client, query)
+            assert "3 条产品记录" in answer["answer"]
+            assert "| 产品名称 | 商品编号 | 规格 | 储存条件 |" in answer["answer"]
+            assert "蛋白 G型" in answer["answer"] and "蛋白粉" not in answer["answer"]
+            assert "00000" in answer["answer"] and "未提供" in answer["answer"]
+            assert len(answer["citations"]) == 3
+        for query in ["模型连接了吗", "查一下模型链接", "DeepSeek连上了吗"]:
+            answer = chat(client, query)
+            assert "没有连接可用的大模型" in answer["answer"]
+            assert not answer["citations"] and "AI整理" not in answer["answer"]
+        login(client, password, "no-products")
+        assert not chat(client, "帮我查下蛋液有哪些")["citations"]

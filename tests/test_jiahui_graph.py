@@ -147,9 +147,9 @@ async def test_model_selected_verbatim_quote_is_checked_and_cited(knowledge_grap
         lambda c: json.dumps({"quotes": [{"chunk_id": c.chunk_id, "quote": quote}]})
     )
     result = await ask(graph)
-    assert result["final_answer"].startswith("模型辅助选择的原文依据")
+    assert result["final_answer"].startswith("根据已导入资料：")
     assert quote in result["final_answer"]
-    assert "不包含自由扩写" in result["final_answer"]
+    assert "模型辅助选择" not in result["final_answer"]
     assert result["citations"][0].chunk_id == chunk.chunk_id
     assert "PDF第7页" in result["citations"][0].section
     assert "test-v2" in result["citations"][0].section
@@ -200,7 +200,7 @@ async def test_nonverbatim_or_wrong_source_quote_cannot_be_presented_as_verified
     )
     result = await ask(graph)
     assert "已降级为原文节选" in result["final_answer"]
-    assert "模型辅助选择的原文依据" not in result["final_answer"]
+    assert "根据已导入资料：" not in result["final_answer"]
 
 
 async def test_mixed_quotes_only_retain_verbatim_supported_content(knowledge_graph):
@@ -215,7 +215,7 @@ async def test_mixed_quotes_only_retain_verbatim_supported_content(knowledge_gra
         )
     )
     result = await ask(graph)
-    assert "模型辅助选择的原文依据" in result["final_answer"]
+    assert "根据已导入资料：" in result["final_answer"]
     assert "入库时核对箱体批次。" in result["final_answer"]
     assert "12个月" not in result["final_answer"]
 
@@ -236,7 +236,7 @@ async def test_reference_document_retains_noncurrent_caveat_even_with_valid_quot
         status="reference",
     )
     result = await ask(graph)
-    assert "未确认当前有效" in result["final_answer"]
+    assert "现行有效性待确认" in result["final_answer"]
     assert "不能作为现行制度或实时业务数据" in result["final_answer"]
 
 
@@ -312,3 +312,22 @@ async def test_unspecified_this_product_requires_name_code_or_spec(knowledge_gra
     assert "原文节选" not in answer
     assert result["citations"] == []
     assert llm.calls == []
+
+
+@pytest.mark.parametrize(
+    "status, expected",
+    [
+        ("deepseek", "已连接DeepSeek"),
+        ("deepseek_unavailable", "真实调用失败"),
+        ("deepseek_unverified", "尚未验证"),
+        ("offline_excerpt", "没有连接可用"),
+    ],
+)
+def test_connection_answer_uses_probe_status_not_knowledge(status, expected):
+    from types import SimpleNamespace
+
+    from app.jiahui.graph import model_status_answer
+
+    retriever = SimpleNamespace(capabilities={"llm": status, "embedding": "hash"})
+    assert expected in model_status_answer("查一下模型链接", retriever)
+    assert model_status_answer("蛋液有哪些", retriever) is None

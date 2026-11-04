@@ -11,7 +11,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.agents.state import AgentState
 from app.core.enums import IntentLabel, RetrievalStrategy
-from app.jiahui.catalog import Catalog, spec_selected
+from app.jiahui.catalog import Catalog, is_listing_query, spec_selected
 from app.jiahui.runtime import citations, record_chunk
 from app.providers.fake import OfflineLLMProvider
 from app.schemas.agent import IntentResult
@@ -132,6 +132,53 @@ def overview_answer(catalog, retriever, scopes):
     return "\n\n".join(parts)
 
 
+def model_status_answer(query, retriever):
+    if not any(w in query.casefold() for w in ("模型", "deepseek", "大模型", "api", "连接状态")):
+        return None
+    if not any(
+        w in query
+        for w in ("连接", "链接", "接上", "接入", "可用", "连上", "状态", "用的", "用什么", "联网")
+    ):
+        return None
+    caps = getattr(retriever, "capabilities", {})
+    status = caps.get("llm", "未核验")
+    if status in {"deepseek", "ollama"}:
+        name = "DeepSeek" if status == "deepseek" else "本地 Ollama"
+        answer = f"已连接{name}，最近一次真实调用检查通过。"
+    elif status == "offline_excerpt":
+        answer = "目前没有连接可用的大模型，正在使用离线检索。产品目录仍可查询，但不会生成式回答。"
+    elif status.endswith("_unavailable"):
+        answer = "已配置模型，但最近一次真实调用失败，目前不能确认模型可用。请在“资料与模型设置”检查Key、网络及API额度后重新测试。"
+    else:
+        answer = "模型连接尚未验证，不能确认已连接。请在“资料与模型设置”进行连接测试。"
+    if caps.get("embedding") == "hash":
+        answer += "\n\n检索目前使用关键词和哈希匹配，语义向量模型尚未启用；这与DeepSeek对话连接是两个独立配置。"
+    return answer
+
+
+def product_list_answer(rows):
+    def cell(value):
+        return str(value or "未提供").replace("|", "\\|").replace("\n", " ")
+
+    shown = rows[:20]
+    lines = [
+        f"找到 **{len(rows)} 条产品记录**：",
+        "",
+        "| 产品名称 | 商品编号 | 规格 | 储存条件 |",
+        "| --- | --- | --- | --- |",
+    ]
+    for row in shown:
+        lines.append(
+            "| " + " | ".join(cell(row.get(k)) for k in ("name", "code", "spec", "storage")) + " |"
+        )
+    if len(rows) > len(shown):
+        lines.append(f"\n先列出前{len(shown)}条，可补充名称、品牌或规格缩小范围。")
+    if any(row.get("status") == "reference" for row in shown):
+        lines.append("\n以上含参考目录记录，现行有效性待确认；未提供的字段不作推测。")
+    lines.append("\n想看哪款的详细资料？告诉我名称或编号即可；同一商品有多个规格时，我会请你选择。")
+    return "\n".join(lines)
+
+
 def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
     async def route(state):
         query = state["user_query"]
@@ -178,6 +225,9 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                 "final_answer": "你好，我是嘉惠内部业务助手。可以按编号、名称、品牌、别名和规格查询资料，比较商品并核对来源；缺失信息会明确提示。",
                 "strategy": RetrievalStrategy.DIRECT,
             }
+        status_answer = model_status_answer(query, retriever)
+        if status_answer:
+            return {**result, "final_answer": status_answer, "strategy": RetrievalStrategy.DIRECT}
         catalog = Catalog.load(settings.jiahui_data_dir)
         if is_overview_query(query):
             return {
@@ -186,6 +236,16 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                 "strategy": RetrievalStrategy.DIRECT,
             }
         rows = catalog.search(query, scopes)
+        if rows and (
+            is_listing_query(query) or any(w in query for w in ("比较", "对比", "区别", "差别"))
+        ):
+            shown = rows[:20]
+            return {
+                **result,
+                "final_answer": product_list_answer(rows),
+                "citations": citations([record_chunk(r) for r in shown]),
+                "strategy": RetrievalStrategy.DIRECT,
+            }
         if rows:
             chunks = [record_chunk(row) for row in rows]
             recalled = await retriever.search_scoped(query, chunks, top_k=len(chunks))
@@ -229,7 +289,26 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                 **result,
                 "final_answer": "请先提供具体商品名称、编号、品牌或规格，我会根据可访问的嘉惠资料核实。",
             }
-        recalled = await retriever.search_scoped(query, retriever.knowledge(scopes))
+        knowledge = retriever.knowledge(scopes)
+        if not any(
+            w in query
+            for w in (
+                "导入",
+                "上传",
+                "启动",
+                "登录",
+                "设置",
+                "模板",
+                "软件",
+                "知识库",
+                "账号",
+                "密码",
+                "备份",
+                "核实步骤",
+            )
+        ):
+            knowledge = [c for c in knowledge if c.document_id != "jiahui-software-usage-guide"]
+        recalled = await retriever.search_scoped(query, knowledge)
         ranked = await reranker.rerank(query, recalled, top_n=4)
         if not ranked:
             docs = retriever.knowledge_documents(scopes)
@@ -260,7 +339,7 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
         chunks = state.get("retrieved_chunks") or []
         excerpt = "\n\n".join(f"### {c.title}\n{c.content}\n来源：{c.section}" for c in chunks)
         caveat = (
-            "其中参考资料未确认当前有效，仅反映该版本记载；不能作为现行制度或实时业务数据。\n"
+            "参考资料的现行有效性待确认，不能作为现行制度或实时业务数据。\n"
             if any(c.metadata.get("status") == "reference" for c in chunks)
             else ""
         )
@@ -300,13 +379,11 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                 chunk = next((c for c in chunks if c.chunk_id == item.get("chunk_id")), None)
                 quote = item.get("quote", "")
                 if chunk and isinstance(quote, str) and quote.strip() and quote in chunk.content:
-                    selected.append(f"> {quote}\n来源：{chunk.section}")
+                    selected.append(f"- {quote.strip()}")
                     used.append(chunk)
             if selected:
                 return {
-                    "final_answer": "模型辅助选择的原文依据（已逐字校验，不包含自由扩写）：\n"
-                    + caveat
-                    + "\n\n".join(selected),
+                    "final_answer": "根据已导入资料：\n\n" + caveat + "\n\n".join(selected),
                     "citations": citations(used),
                     "token_usage": response.usage,
                 }

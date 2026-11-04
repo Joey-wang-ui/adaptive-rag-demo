@@ -118,6 +118,12 @@ def self_test():
                 assert profile["capabilities"]["llm"] == "offline_excerpt"
                 assert profile["capabilities"]["embedding"] == "hash"
                 checks["honest_model_fallback"] = True
+                _, payload = request("/api/v1/chat", {"message": "查一下模型链接"})
+                model_reply = json.loads(payload)
+                assert "没有连接可用的大模型" in model_reply["answer"] and not model_reply["citations"]
+                _, payload = request("/api/v1/chat", {"message": "帮我查下原料有哪些"})
+                assert "| 产品名称 |" in json.loads(payload)["answer"]
+                checks["conversational_list_and_model_status_routing"] = True
                 _, body = request("/api/v1/business/prices?identifier=00001")
                 assert json.loads(body)["message"] == "尚未接入业务数据"
                 checks["unconnected_erp"] = True

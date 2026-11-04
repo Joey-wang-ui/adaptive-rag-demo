@@ -8,12 +8,11 @@ import { Logo } from "./Logo";
 function CitationList({ citations }: { citations: Citation[] }) {
   const unique = citations.filter((item, index, all) => all.findIndex((other) => other.chunk_id === item.chunk_id) === index);
   if (!unique.length) return null;
-  return <div className="citation-list" aria-label="回答来源">
-    <span className="citation-heading">来源</span>
+  return <details className="citation-details" aria-label="回答来源"><summary>查看来源（{unique.length} 条）</summary><div className="citation-list">
     {unique.map((item, index) => <span className="citation" key={item.chunk_id} title={`${item.document_id} · ${item.chunk_id}`}>
       <span className="citation-index">{index + 1}</span><span>{item.title}{item.section ? ` · ${item.section}` : ""}</span>
     </span>)}
-  </div>;
+  </div></details>;
 }
 
 function ActionCard({ action, onConfirm, onCancel, disabled }: { action: ActionProposal; onConfirm: () => void; onCancel: () => void; disabled: boolean }) {
