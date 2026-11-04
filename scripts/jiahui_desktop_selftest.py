@@ -113,6 +113,16 @@ def self_test():
                 answer = json.loads(body)
                 assert "25kg/包" in answer["answer"] and answer["citations"]
                 checks["hybrid_graph_answer_citation"] = True
+                _, followup = request(
+                    "/api/v1/chat", {"message": "那保质期呢", "session_id": answer["session_id"]}
+                )
+                assert (
+                    "需要确认" in json.loads(followup)["answer"]
+                    and json.loads(followup)["citations"]
+                )
+                _, general = request("/api/v1/chat", {"message": "帮我写一份会议通知"})
+                assert "未连接可用模型" in json.loads(general)["answer"]
+                checks["product_followup_and_honest_general_chat"] = True
                 _, body = request("/api/v1/profile")
                 profile = json.loads(body)
                 assert profile["capabilities"]["llm"] == "offline_excerpt"
@@ -120,7 +130,9 @@ def self_test():
                 checks["honest_model_fallback"] = True
                 _, payload = request("/api/v1/chat", {"message": "查一下模型链接"})
                 model_reply = json.loads(payload)
-                assert "没有连接可用的大模型" in model_reply["answer"] and not model_reply["citations"]
+                assert (
+                    "没有连接可用的大模型" in model_reply["answer"] and not model_reply["citations"]
+                )
                 _, payload = request("/api/v1/chat", {"message": "帮我查下原料有哪些"})
                 assert "| 产品名称 |" in json.loads(payload)["answer"]
                 checks["conversational_list_and_model_status_routing"] = True

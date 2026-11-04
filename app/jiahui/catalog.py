@@ -204,6 +204,7 @@ class Catalog:
         egg_family = "蛋液" in meaningful and not any(
             x in meaningful for x in ("蛋黄液", "蛋白液", "全蛋液")
         )
+        flour_family = "面粉" in meaningful
         ranked = []
         for row in rows:
             names = [row.get("name", ""), *row.get("aliases", [])]
@@ -213,6 +214,10 @@ class Catalog:
                 if not text:
                     continue
                 if egg_family and re.search(r"蛋液|蛋[黄白]液|全蛋液|杀菌蛋[黄白](?!粉)", text):
+                    score = max(score, 85)
+                if flour_family and re.search(
+                    r"面粉|[高中低]筋(?:小麦)?粉|小麦粉|面包粉|蛋糕粉", text
+                ):
                     score = max(score, 85)
                 if text in query:
                     score = max(score, 100 + len(text))

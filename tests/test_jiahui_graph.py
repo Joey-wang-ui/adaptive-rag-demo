@@ -331,3 +331,89 @@ def test_connection_answer_uses_probe_status_not_knowledge(status, expected):
     retriever = SimpleNamespace(capabilities={"llm": status, "embedding": "hash"})
     assert expected in model_status_answer("查一下模型链接", retriever)
     assert model_status_answer("蛋液有哪些", retriever) is None
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "帮我写一份会议通知",
+        "帮我翻译 hello",
+        "解释一下SQL连接",
+        "帮我润色这句话：明天开会",
+        "写个报价单模板",
+    ],
+)
+async def test_general_requests_call_model_without_business_citations(knowledge_graph, question):
+    graph, llm, _ = knowledge_graph()
+    llm.canned[question] = "这是测试模型的通用回答。"
+    result = await graph.ainvoke({"user_query": question, "extra": {"scopes": ["knowledge"]}})
+    assert "通用参考" in result["final_answer"] and "测试模型的通用回答" in result["final_answer"]
+    assert not result["citations"]
+    assert len(llm.calls) == 1 and llm.calls[0][-1]["content"] == question
+    assert "测试验收规则" not in str(llm.calls)
+
+
+async def test_offline_general_request_does_not_pretend_generated_answer(knowledge_graph):
+    graph, llm, _ = knowledge_graph(offline=True)
+    result = await graph.ainvoke(
+        {"user_query": "帮我写会议通知", "extra": {"scopes": ["knowledge"]}}
+    )
+    assert "未连接可用模型" in result["final_answer"] and not llm.calls
+
+
+def test_product_followup_never_reuses_ambiguous_or_unauthorized_products():
+    from app.jiahui.catalog import Catalog
+    from app.jiahui.graph import followup_records
+    from app.schemas.chat import ChatMessage
+
+    row = {
+        "id": "one",
+        "name": "测试高筋粉",
+        "code": "00001",
+        "spec": "25kg/包",
+        "status": "current",
+        "scope": "products",
+    }
+    history = [ChatMessage(role="user", content="编号00001")]
+    assert followup_records("那保质期呢", history, Catalog([row]), {"products"}) == [row]
+    assert not followup_records("那保质期呢", history, Catalog([row]), {"knowledge"})
+    assert not followup_records(
+        "那保质期呢", history, Catalog([row, {**row, "id": "two", "spec": "5kg/包"}]), {"products"}
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "解释一下嘉惠的退货政策",
+        "帮我写当前库存",
+        "解释一下商品编号00001的保质期",
+        "帮我写这款产品的替代适用性",
+    ],
+)
+def test_actual_business_facts_cannot_bypass_retrieval_as_general_chat(query):
+    from app.jiahui.graph import is_general_request
+
+    assert not is_general_request(query)
+
+
+@pytest.mark.parametrize(
+    "fabricated",
+    [
+        "保质期为36个月。",
+        "储存温度为零下18度。",
+        "可替代任何奶油。",
+        "当前库存500箱。",
+        "今天成交价为100元。",
+        "具有治疗疾病的功效。",
+    ],
+)
+async def test_fabricated_business_claims_do_not_survive_quote_validation(
+    knowledge_graph, fabricated
+):
+    graph, _, _ = knowledge_graph(
+        lambda c: json.dumps({"quotes": [{"chunk_id": c.chunk_id, "quote": fabricated}]})
+    )
+    result = await ask(graph)
+    assert fabricated not in result["final_answer"]
+    assert "已降级" in result["final_answer"]

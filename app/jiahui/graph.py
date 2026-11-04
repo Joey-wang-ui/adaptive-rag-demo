@@ -132,12 +132,70 @@ def overview_answer(catalog, retriever, scopes):
     return "\n\n".join(parts)
 
 
+def is_product_followup(query):
+    rest = query
+    for word in (
+        "这款产品",
+        "这个商品",
+        "这款",
+        "这个",
+        "储存条件",
+        "保质期",
+        "储存",
+        "保存",
+        "包装",
+        "规格",
+        "产地",
+        "品牌",
+        "如何",
+        "怎么",
+        "多少",
+        "什么",
+        "是",
+        "那",
+        "它",
+        "的",
+        "呢",
+    ):
+        rest = rest.replace(word, "")
+    return bool(query.strip()) and not re.sub(r"[\s？?。，,！!]", "", rest)
+
+
+def followup_records(query, history, catalog, scopes):
+    if not is_product_followup(query):
+        return []
+    for message in reversed(history or []):
+        if message.role != "user" or is_product_followup(message.content):
+            continue
+        found = catalog.search(message.content, scopes)
+        selected = [r for r in found if r.get("spec") and spec_selected(r["spec"], message.content)]
+        if len(selected) == 1:
+            found = selected
+        return found if len(found) == 1 else []
+    return []
+
+
 def model_status_answer(query, retriever):
     if not any(w in query.casefold() for w in ("模型", "deepseek", "大模型", "api", "连接状态")):
         return None
     if not any(
         w in query
-        for w in ("连接", "链接", "接上", "接入", "可用", "连上", "状态", "用的", "用什么", "联网")
+        for w in (
+            "连接",
+            "链接",
+            "接上",
+            "接入",
+            "可用",
+            "连上",
+            "状态",
+            "用的",
+            "用什么",
+            "联网",
+            "正常",
+            "接好",
+            "什么模型",
+            "连好",
+        )
     ):
         return None
     caps = getattr(retriever, "capabilities", {})
@@ -179,7 +237,110 @@ def product_list_answer(rows):
     return "\n".join(lines)
 
 
+def is_general_request(query):
+    # Product-specific facts stay on the evidence path, including ambiguous requests.
+    if any(
+        w in query
+        for w in (
+            "保质期",
+            "储温",
+            "储存",
+            "功效",
+            "替代",
+            "商品编号",
+            "产品编号",
+            "货号",
+            "现行制度",
+        )
+    ):
+        return False
+    template = any(w in query for w in ("模板", "草稿"))
+    if not template and any(
+        w in query
+        for w in (
+            "嘉惠",
+            "价格",
+            "报价",
+            "库存",
+            "订单",
+            "制度",
+            "政策",
+            "规则",
+            "验收",
+            "收货",
+            "出货",
+            "编号",
+            "产品",
+            "商品",
+        )
+    ):
+        return False
+    return any(
+        w in query.casefold()
+        for w in (
+            "写个",
+            "写一",
+            "写份",
+            "帮我写",
+            "润色",
+            "翻译",
+            "改写",
+            "总结下面",
+            "解释一下",
+            "什么是",
+            "讲讲",
+            "讲个",
+            "聊聊",
+            "python",
+            "excel",
+            "sql",
+            "推荐一本",
+        )
+    )
+
+
 def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
+    async def general_answer(state):
+        if isinstance(llm, OfflineLLMProvider):
+            return {
+                "final_answer": "这类问题可以直接交给大模型回答。目前未连接可用模型，请在“资料与模型设置”连接DeepSeek后重试。",
+                "citations": [],
+            }
+        from app.prompts.jiahui import GENERAL_CHAT_SYSTEM
+
+        messages = [{"role": "system", "content": GENERAL_CHAT_SYSTEM}]
+        history = state.get("messages") or []
+        recent = history[-8:]
+        for previous, reply in zip(recent, recent[1:], strict=False):
+            if (
+                previous.role == "user"
+                and reply.role == "assistant"
+                and reply.content.startswith("通用参考")
+                and is_general_request(previous.content)
+            ):
+                messages.extend(
+                    [
+                        {"role": "user", "content": previous.content},
+                        {"role": "assistant", "content": reply.content},
+                    ]
+                )
+        messages.append({"role": "user", "content": state["user_query"]})
+        try:
+            response = await llm.generate(messages, temperature=0.3, max_tokens=1600)
+            if response.content and response.content.strip():
+                return {
+                    "final_answer": "通用参考（未使用嘉惠业务资料）：\n\n"
+                    + response.content.strip(),
+                    "citations": [],
+                    "token_usage": response.usage,
+                }
+        except Exception as exc:
+            logger.warning("jiahui_general_chat_failed", extra={"error_type": type(exc).__name__})
+        return {
+            "final_answer": "本次模型调用未成功，请检查连接后重试；没有改用产品资料拼凑回答。",
+            "citations": [],
+        }
+
     async def route(state):
         query = state["user_query"]
         scopes = set((state.get("extra") or {}).get("scopes", []))
@@ -214,7 +375,9 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
             ),
             None,
         )
-        if business:
+        if business and not (
+            is_general_request(query) and any(w in query for w in ("模板", "草稿"))
+        ):
             from app.jiahui.business import UnconnectedERP
 
             data = await UnconnectedERP().query(business, query, scopes)
@@ -236,6 +399,8 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                 "strategy": RetrievalStrategy.DIRECT,
             }
         rows = catalog.search(query, scopes)
+        if not rows:
+            rows = followup_records(query, state.get("messages"), catalog, scopes)
         if rows and (
             is_listing_query(query) or any(w in query for w in ("比较", "对比", "区别", "差别"))
         ):
@@ -264,6 +429,28 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
             specs = [r for r in rows if r.get("spec") and spec_selected(r["spec"], query)]
             if len(specs) == 1 and not any(x in query for x in ("比较", "对比", "分别", "有哪些")):
                 rows, chunks = specs, [record_chunk(specs[0])]
+            requested = next(
+                (
+                    (label, key)
+                    for words, label, key in (
+                        (("保质期",), "保质期", "shelf_life"),
+                        (("储存", "保存"), "储存条件", "storage"),
+                        (("规格",), "规格", "spec"),
+                        (("产地",), "产地", "origin"),
+                        (("品牌",), "品牌", "brand"),
+                    )
+                    if any(w in query for w in words)
+                ),
+                None,
+            )
+            if len(rows) == 1 and requested:
+                label, key = requested
+                row = rows[0]
+                value = row.get(key) or "尚未录入/需要确认"
+                concise = f"**{row['name']}**（商品编号：{row.get('code') or '未提供'}）\n\n{label}：{value}"
+                if row.get("status") == "reference":
+                    concise += "\n\n参考目录的现行有效性待确认。"
+                return {**result, "final_answer": concise, "citations": citations(chunks)}
             answer = "以下为已录入资料的结构化查询结果（非模型生成）：\n\n" + "\n\n".join(
                 f"### {r['name']}\n{Catalog.to_document(r)}" for r in rows[:12]
             )
@@ -289,6 +476,8 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
                 **result,
                 "final_answer": "请先提供具体商品名称、编号、品牌或规格，我会根据可访问的嘉惠资料核实。",
             }
+        if is_general_request(query):
+            return {**result, **await general_answer(state), "strategy": RetrievalStrategy.DIRECT}
         knowledge = retriever.knowledge(scopes)
         if not any(
             w in query
@@ -310,6 +499,35 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
             knowledge = [c for c in knowledge if c.document_id != "jiahui-software-usage-guide"]
         recalled = await retriever.search_scoped(query, knowledge)
         ranked = await reranker.rerank(query, recalled, top_n=4)
+        if not ranked and not any(
+            w in query
+            for w in (
+                "嘉惠",
+                "产品",
+                "商品",
+                "编号",
+                "货号",
+                "蛋",
+                "奶",
+                "粉",
+                "原料",
+                "油脂",
+                "馅料",
+                "制度",
+                "资料",
+                "知识库",
+                "收货",
+                "出货",
+                "验收",
+                "保质期",
+                "储存",
+                "功效",
+                "替代",
+                "换算",
+                "怎么保存",
+            )
+        ):
+            return {**result, **await general_answer(state), "strategy": RetrievalStrategy.DIRECT}
         if not ranked:
             docs = retriever.knowledge_documents(scopes)
             if docs or catalog.visible_records(scopes):

@@ -225,7 +225,7 @@ def run_gui(home: Path):
     runtime = DesktopRuntime(home)
     with InstanceLock(home):
         window = webview.create_window(
-            "嘉惠 · 内部业务助手 v1.1.4",
+            "嘉惠 · 内部业务助手 v1.1.5",
             html=loading_html(),
             width=1240,
             height=840,
