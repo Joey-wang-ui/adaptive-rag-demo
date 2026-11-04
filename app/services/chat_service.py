@@ -215,7 +215,7 @@ class ChatService:
             "confirm_action_id": request.confirm_action_id,
             "confirmed_action": confirmed_action,
             "idempotency_key": request.idempotency_key,
-            "extra": {"scopes": list(scopes)},
+            "extra": {"scopes": list(scopes), "web_search": request.web_search},
         }
 
     def _resolve_confirmation(self, request: ChatRequest, session_id: str) -> ActionProposal | None:

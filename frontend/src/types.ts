@@ -5,6 +5,8 @@ export interface Citation {
   title: string;
   chunk_id: string;
   section: string | null;
+  url?: string | null;
+  source_kind?: "internal" | "web";
 }
 
 export interface ActionProposal {
@@ -34,6 +36,7 @@ export interface ChatRequest {
   session_id?: string;
   user_id: string;
   confirm_action_id?: string;
+  web_search?: boolean;
 }
 
 export type StreamEvent =

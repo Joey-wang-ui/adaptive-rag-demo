@@ -41,3 +41,15 @@ describe("answer presentation", () => {
     expect(html).not.toContain("4.2 秒");
   });
 });
+
+it("renders public source links with provenance and blocks executable URLs", () => {
+  const conversation: Conversation = { id: "web", title: "搜索", updatedAt: 0, messages: [{ id: "answer", role: "assistant", state: "complete", content: "公开网页参考", citations: [
+    { document_id: "web1", chunk_id: "w1", title: "公开公告", section: "公开网页 · 查询时间", source_kind: "web", url: "https://example.com/news" },
+    { document_id: "web2", chunk_id: "w2", title: "无效来源", section: null, source_kind: "web", url: "javascript:alert(1)" },
+  ] }] };
+  const html = renderToStaticMarkup(<MessageView conversation={conversation} busy={false} onConfirm={() => {}} onCancel={() => {}} />);
+  expect(html).toContain('href="https://example.com/news"');
+  expect(html).toContain('rel="noopener noreferrer"');
+  expect(html).toContain("公开网页 · 查询时间");
+  expect(html).not.toContain('href="javascript:');
+});

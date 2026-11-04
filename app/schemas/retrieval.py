@@ -1,5 +1,7 @@
 """Retrieved chunk and citation schemas."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.core.enums import DocumentCategory
@@ -25,6 +27,9 @@ class Citation(BaseModel):
     title: str
     chunk_id: str
     section: str | None = None
+
+    url: str | None = None
+    source_kind: Literal["internal", "web"] = "internal"
 
 
 class RetrievalRequest(BaseModel):

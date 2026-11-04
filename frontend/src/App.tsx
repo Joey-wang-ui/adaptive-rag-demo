@@ -31,6 +31,7 @@ function Workspace({ profile, principal, onLogout, desktop, onUpdated }: { profi
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [webSearch, setWebSearch] = useState(false);
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => localStorage.getItem("adaptive-rag-theme") === "dark" ? "dark" : "light");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -59,11 +60,12 @@ function Workspace({ profile, principal, onLogout, desktop, onUpdated }: { profi
   function newChat() {
     chat.select(null);
     setDraft("");
+    setWebSearch(false);
     setSidebarOpen(false);
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }
 
-  function selectChat(id: string) { chat.select(id); setSidebarOpen(false); setSearchOpen(false); }
+  function selectChat(id: string) { setWebSearch(false); chat.select(id); setSidebarOpen(false); setSearchOpen(false); }
   function suggest(prompt: string) { setDraft(prompt); inputRef.current?.focus(); }
   function confirm(action: ActionProposal, messageId: string) {
     if (!chat.active) return;
@@ -84,7 +86,7 @@ function Workspace({ profile, principal, onLogout, desktop, onUpdated }: { profi
       {jiahui && <BusinessStatus profile={profile} />}
       {chat.active ? <div className="chat-content"><MessageView readOnly={jiahui} conversation={chat.active} busy={chat.busy} onConfirm={confirm} onCancel={(messageId) => chat.dismissAction(chat.active!.id, messageId)} /></div>
         : <div className="welcome"><div className="welcome-inner"><Logo />{jiahui && <span className="eyebrow welcome-eyebrow">JIAHUI · YOUR BUSINESS COMPANION</span>}<h1>{jiahui ? "你好，今天需要核实什么？" : "有什么可以帮忙的？"}</h1><p>{jiahui ? profile.welcome : "让知识、订单与售后服务在一次对话中自然协作。"}</p><div className="suggestions">{suggestions.map((item) => <button key={item.title} onClick={() => suggest(item.prompt)}><span className="suggestion-icon">{item.icon}</span><span><strong>{item.title}</strong><small>{item.prompt}</small></span><ArrowDown size={15} /></button>)}</div>{jiahui && <div className="welcome-trust"><ShieldCheck size={14} /><span>依据业务资料 · 保留来源与版本</span>{desktop && principal?.role === "admin" && <button onClick={() => setSettingsOpen(true)}><UploadCloud size={14} />导入资料</button>}</div>}</div></div>}
-      <Composer busy={chat.busy} onSend={(message) => void chat.send(message)} onStop={chat.stop} draft={draft} onDraft={setDraft} inputRef={inputRef} assistantName={jiahui ? profile.name : undefined} />
+      <Composer busy={chat.busy} onSend={(message) => { void chat.send(message, undefined, webSearch); setWebSearch(false); }} onStop={chat.stop} draft={draft} onDraft={setDraft} inputRef={inputRef} assistantName={jiahui ? profile.name : undefined} webSearch={webSearch} onWebSearch={jiahui && (principal?.scopes.includes("knowledge") || principal?.scopes.includes("*")) ? setWebSearch : undefined} />
     </main>
     {searchOpen && <SearchDialog conversations={chat.conversations} onClose={() => setSearchOpen(false)} onSelect={selectChat} />}
     {!jiahui && <ChatWidget chat={chat} healthy={healthy} onConfirm={confirm} profile={profile} />}

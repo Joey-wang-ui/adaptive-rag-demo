@@ -5,12 +5,18 @@ import remarkGfm from "remark-gfm";
 import type { ActionProposal, Citation, Conversation, Message } from "../types";
 import { Logo } from "./Logo";
 
+export function safeWebSource(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try { const parsed = new URL(url); return ["https:", "http:"].includes(parsed.protocol) && !parsed.username && !parsed.password ? parsed.href : null; }
+  catch { return null; }
+}
+
 function CitationList({ citations }: { citations: Citation[] }) {
   const unique = citations.filter((item, index, all) => all.findIndex((other) => other.chunk_id === item.chunk_id) === index);
   if (!unique.length) return null;
   return <details className="citation-details" aria-label="回答来源"><summary>查看来源（{unique.length} 条）</summary><div className="citation-list">
     {unique.map((item, index) => <span className="citation" key={item.chunk_id} title={`${item.document_id} · ${item.chunk_id}`}>
-      <span className="citation-index">{index + 1}</span><span>{item.title}{item.section ? ` · ${item.section}` : ""}</span>
+      <span className="citation-index">{index + 1}</span><span>{item.source_kind === "web" && safeWebSource(item.url) ? <a href={safeWebSource(item.url)!} target="_blank" rel="noopener noreferrer">{item.title} ↗</a> : item.title}{item.section ? ` · ${item.section}` : ""}</span>
     </span>)}
   </div></details>;
 }

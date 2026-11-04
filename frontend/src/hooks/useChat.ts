@@ -126,7 +126,7 @@ export function useChat(options: { persistent?: boolean; userId?: string; onUnau
 
   const stop = useCallback(() => requestRef.current?.abort(), []);
 
-  const send = useCallback(async (raw: string, confirmActionId?: string) => {
+  const send = useCallback(async (raw: string, confirmActionId?: string, webSearch = false) => {
     const text = raw.trim();
     if (!text || text.length > 4000 || busyRef.current) return false;
     const current = stateRef.current;
@@ -150,6 +150,7 @@ export function useChat(options: { persistent?: boolean; userId?: string; onUnau
       await streamChat(
         {
           message: text,
+          web_search: webSearch,
           user_id: optionsRef.current.userId ?? DEMO_USER_ID,
           ...(conversation.sessionId ? { session_id: conversation.sessionId } : {}),
           ...(confirmActionId ? { confirm_action_id: confirmActionId } : {}),

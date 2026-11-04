@@ -136,6 +136,12 @@ def self_test():
                 _, payload = request("/api/v1/chat", {"message": "帮我查下原料有哪些"})
                 assert "| 产品名称 |" in json.loads(payload)["answer"]
                 checks["conversational_list_and_model_status_routing"] = True
+                _, payload = request(
+                    "/api/v1/chat", {"message": "厂家公开公告", "web_search": True}
+                )
+                web_reply = json.loads(payload)
+                assert "尚未配置DeepSeek Key" in web_reply["answer"] and not web_reply["citations"]
+                checks["opt_in_search_missing_key_is_honest"] = True
                 _, body = request("/api/v1/business/prices?identifier=00001")
                 assert json.loads(body)["message"] == "尚未接入业务数据"
                 checks["unconnected_erp"] = True

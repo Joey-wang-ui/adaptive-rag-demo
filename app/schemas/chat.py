@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, max_length=64)
     user_id: str = Field(default="anonymous", min_length=1, max_length=64)
     stream: bool = False
+    web_search: bool = False
     confirm_action_id: str | None = None
     idempotency_key: str | None = Field(default=None, max_length=128)
 

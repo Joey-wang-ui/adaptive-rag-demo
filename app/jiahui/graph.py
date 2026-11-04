@@ -299,7 +299,7 @@ def is_general_request(query):
     )
 
 
-def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
+def build_jiahui_graph(*, llm, settings, retriever, reranker, registry, web_searcher=None):
     async def general_answer(state):
         if isinstance(llm, OfflineLLMProvider):
             return {
@@ -391,6 +391,33 @@ def build_jiahui_graph(*, llm, settings, retriever, reranker, registry):
         status_answer = model_status_answer(query, retriever)
         if status_answer:
             return {**result, "final_answer": status_answer, "strategy": RetrievalStrategy.DIRECT}
+        if (state.get("extra") or {}).get("web_search"):
+            if "knowledge" not in scopes and "*" not in scopes:
+                return {
+                    **result,
+                    "final_answer": "当前账号无权使用公开资料搜索，请联系管理员确认知识访问权限。",
+                    "refused": True,
+                }
+            company_private = "嘉惠" in query and not any(
+                word in query for word in ("官网", "公开", "公告", "新闻", "网站")
+            )
+            if (
+                company_private
+                or any(w in query for w in ("内部", "客户", "合同", "密码", "密钥"))
+                or re.search(r"sk-[A-Za-z0-9_-]{12,}", query)
+            ):
+                return {
+                    **result,
+                    "final_answer": "该问题可能涉及内部信息，请关闭联网搜索后查询；内部资料不会自动发送给网页搜索服务。",
+                    "refused": True,
+                }
+            from app.jiahui.web_search import public_search_answer
+
+            return {
+                **result,
+                **await public_search_answer(query, settings, llm, searcher=web_searcher),
+                "strategy": RetrievalStrategy.DIRECT,
+            }
         catalog = Catalog.load(settings.jiahui_data_dir)
         if is_overview_query(query):
             return {
