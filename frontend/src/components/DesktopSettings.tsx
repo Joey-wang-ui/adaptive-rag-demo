@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Copy, FileText, FolderOpen, KeyRound, UploadCloud, X } from "lucide-react";
 import { ApiRequestError, downloadDesktopTemplate, getDesktopDocuments, getDesktopSettings, importDesktopFile, repairDesktopCatalog, updateDesktopModel } from "../lib/api";
+import { SkillTemplatesEditor } from "./SkillTemplatesEditor";
 import type { DesktopSettings as Settings, ImportResult, KnowledgeDocument } from "../types";
 
 export function importSummary(pdf: boolean, result: ImportResult, current: boolean): string {
@@ -16,7 +17,7 @@ type Diagnostic = { filename: string; kind: "pdf" | "products"; bytes: number; s
 export function DesktopSettings({ onClose, onUpdated }: { onClose: () => void; onUpdated: () => Promise<void> }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
-  const [tab, setTab] = useState<"data" | "model">("data");
+  const [tab, setTab] = useState<"data" | "model" | "skills">("data");
   const [key, setKey] = useState("");
   const [remember, setRemember] = useState(false);
   const [current, setCurrent] = useState(false);
@@ -26,6 +27,9 @@ export function DesktopSettings({ onClose, onUpdated }: { onClose: () => void; o
   const [notice, setNotice] = useState("");
   const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null);
   const [copied, setCopied] = useState(false);
+  const [skillDirty, setSkillDirty] = useState(false);
+  function close() { if (!skillDirty || window.confirm("技能模板有未保存的修改，确定关闭吗？")) onClose(); }
+  function chooseTab(next: "data" | "model" | "skills") { if (busy || next === tab) return; if (!skillDirty || window.confirm("将放弃技能模板的未保存修改，继续吗？")) { setTab(next); setSkillDirty(false); } }
   const closeRef = useRef<HTMLButtonElement>(null);
 
   async function readDocuments() {
@@ -81,9 +85,9 @@ export function DesktopSettings({ onClose, onUpdated }: { onClose: () => void; o
   }
   const knowledgeCount = settings?.knowledge_document_count ?? documents.length;
   const knowledgeFiles = settings?.knowledge_file_count ?? new Set(documents.map((item) => item.source_file)).size;
-  return <div className="dialog-backdrop settings-backdrop" onKeyDown={(e) => { if (e.key === "Escape" && !busy) onClose(); }}><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header><div><span className="eyebrow">WORKSPACE SETTINGS</span><h2 id="settings-title">工作台设置</h2></div><button ref={closeRef} className="icon-button" aria-label="关闭设置" onClick={onClose} disabled={busy}><X size={20} /></button></header>
-    <nav className="settings-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}><FolderOpen size={17} />资料管理</button><button className={tab === "model" ? "active" : ""} onClick={() => setTab("model")}><KeyRound size={17} />模型连接</button></nav>
-    <div className="settings-body">{tab === "data" ? <><div className="data-stats"><div><span>已接入知识资料</span><strong>{settings ? knowledgeFiles : "—"}<small>份</small></strong><span>{knowledgeCount} 页/章节可查询</span></div><div><span>可查询产品目录</span><strong>{settings ? (settings.product_count ?? settings.current_products + (settings.reference_products ?? 0)) : "—"}<small>条</small></strong><span>现行 {settings?.current_products ?? 0} · 参考 {settings?.reference_products ?? 0}</span></div><div><span>产品草稿</span><strong>{settings?.draft_products ?? "—"}<small>条</small></strong></div></div>
+  return <div className="dialog-backdrop settings-backdrop" onKeyDown={(e) => { if (e.key === "Escape" && !busy) close(); }}><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header><div><span className="eyebrow">WORKSPACE SETTINGS</span><h2 id="settings-title">工作台设置</h2></div><button ref={closeRef} className="icon-button" aria-label="关闭设置" onClick={close} disabled={busy}><X size={20} /></button></header>
+    <nav className="settings-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => chooseTab("data")}><FolderOpen size={17} />资料管理</button><button className={tab === "model" ? "active" : ""} onClick={() => chooseTab("model")}><KeyRound size={17} />模型连接</button><button className={tab === "skills" ? "active" : ""} onClick={() => chooseTab("skills")}><FileText size={17} />技能模板</button></nav>
+    <div className="settings-body">{tab === "skills" ? <SkillTemplatesEditor onDirty={setSkillDirty} onBusy={setBusy} /> : tab === "data" ? <><div className="data-stats"><div><span>已接入知识资料</span><strong>{settings ? knowledgeFiles : "—"}<small>份</small></strong><span>{knowledgeCount} 页/章节可查询</span></div><div><span>可查询产品目录</span><strong>{settings ? (settings.product_count ?? settings.current_products + (settings.reference_products ?? 0)) : "—"}<small>条</small></strong><span>现行 {settings?.current_products ?? 0} · 参考 {settings?.reference_products ?? 0}</span></div><div><span>产品草稿</span><strong>{settings?.draft_products ?? "—"}<small>条</small></strong></div></div>
       <p className="settings-footnote knowledge-explanation">PDF 导入后，标准表格会形成带来源的参考产品目录，原文按页进入知识库，可直接提问；参考资料保留待确认标记。CSV 草稿需复核为现行版本后参与产品查询。</p>
       <div className="upload-area"><span className="upload-symbol"><UploadCloud size={28} /></span><h3>把资料交给嘉惠助手</h3><p>选择 PDF 即可导入知识库；选择 CSV 可导入结构化产品目录。</p><label className="primary-button file-picker">{busy ? "正在解析并导入…" : "选择资料文件"}<input type="file" accept=".csv,.pdf" disabled={busy} onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); e.target.value = ""; }} /></label><button className="template-download" type="button" onClick={() => void downloadDesktopTemplate().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "下载失败"))}><FileText size={14} />下载产品 CSV 模板</button></div>
       <button type="button" className="template-download" disabled={busy} onClick={() => { setBusy(true); setError(""); setNotice(""); void repairDesktopCatalog().then(async (result) => { setNotice(`已检查本机保存的原件，可查询产品目录 ${result.product_count} 条（参考 ${result.reference_products} 条）。${result.warnings.length ? "部分原件需核对，请查看资料列表及导入诊断。" : "重启后可以继续复用。"}`); await refresh(); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "目录检查未完成")).finally(() => setBusy(false)); }}>检查并修复已导入目录</button>

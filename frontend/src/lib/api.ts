@@ -112,3 +112,8 @@ export async function downloadDesktopTemplate(): Promise<void> {
 }
 
 export const repairDesktopCatalog = () => requestJson<{ product_count: number; reference_products: number; warnings: string[] }>("/desktop/repair", { method: "POST" });
+
+export const getSkillTemplates = () => requestJson<import("../types").SkillSnapshot>("/desktop/skills");
+export const saveSkillTemplates = (templates: import("../types").SkillTemplates, expected_revision: string) => requestJson<import("../types").SkillSnapshot>("/desktop/skills", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ templates, expected_revision }) });
+export const restoreSkillTemplates = (revision: string, expected_revision: string) => requestJson<import("../types").SkillSnapshot>("/desktop/skills/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision, expected_revision }) });
+export const previewSkillTemplates = (templates: import("../types").SkillTemplates, skill: keyof import("../types").SkillTemplates, mode: "rules" | "answer", question: string, web_search: boolean) => requestJson<import("../types").SkillPreview>("/desktop/skills/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ templates, skill, mode, question, web_search }) });

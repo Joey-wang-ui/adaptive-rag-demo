@@ -125,12 +125,16 @@ def create_desktop_app(home: Path, data_dir: Path, bootstrap_token: str = "", va
             raise HTTPException(403, detail="仅管理员可管理模型与资料")
         return principal
 
+    from app.jiahui.skill_api import register_skill_routes
+
+    register_skill_routes(router, admin, data_dir)
+
     @router.get("/status")
     async def status(response: Response):
         response.headers["Cache-Control"] = "no-store"
         return {
             "desktop": True,
-            "version": "1.1.6",
+            "version": "1.1.7",
             "setup_required": not store.has_users(),
             "secure_storage": vault.persistent,
         }

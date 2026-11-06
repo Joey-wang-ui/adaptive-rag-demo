@@ -81,7 +81,7 @@ def self_test():
                     urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(jar)
                 )
 
-                def request(path, payload=None):
+                def request(path, payload=None, method=None):
                     body = (
                         json.dumps(payload, ensure_ascii=False).encode()
                         if payload is not None
@@ -90,6 +90,7 @@ def self_test():
                     req = urllib.request.Request(
                         base + path,
                         data=body,
+                        method=method,
                         headers={"Content-Type": "application/json"} if body else {},
                     )
                     with client.open(req, timeout=30) as response:
@@ -142,6 +143,24 @@ def self_test():
                 web_reply = json.loads(payload)
                 assert "尚未配置DeepSeek Key" in web_reply["answer"] and not web_reply["citations"]
                 checks["opt_in_search_missing_key_is_honest"] = True
+                _, payload = request("/api/v1/desktop/skills")
+                original_skills = json.loads(payload)
+                draft = original_skills["templates"]
+                draft["product_lookup"]["list_intro"] = "【打包隔离模板】{count}条"
+                _, payload = request(
+                    "/api/v1/desktop/skills",
+                    {"templates": draft, "expected_revision": original_skills["revision"]},
+                    method="PUT",
+                )
+                saved_skills = json.loads(payload)
+                _, payload = request("/api/v1/chat", {"message": "原料有哪些"})
+                assert "【打包隔离模板】" in json.loads(payload)["answer"]
+                _, payload = request(
+                    "/api/v1/desktop/skills/preview",
+                    {"templates": draft, "skill": "general_chat", "mode": "rules"},
+                )
+                assert json.loads(payload)["saved"] is False
+                checks["skill_edit_and_nonpersistent_preview"] = True
                 _, body = request("/api/v1/business/prices?identifier=00001")
                 assert json.loads(body)["message"] == "尚未接入业务数据"
                 checks["unconnected_erp"] = True
@@ -172,6 +191,20 @@ def self_test():
                 _, payload = request("/api/v1/profile")
                 assert json.loads(payload)["product_count"] == 3
                 checks["restart_and_repeat_import_reuse_without_duplicates"] = True
+                _, payload = request("/api/v1/desktop/skills")
+                assert json.loads(payload)["revision"] == saved_skills["revision"]
+                _, payload = request(
+                    "/api/v1/desktop/skills/restore",
+                    {
+                        "revision": original_skills["revision"],
+                        "expected_revision": saved_skills["revision"],
+                    },
+                )
+                assert (
+                    json.loads(payload)["templates"]["product_lookup"]["list_intro"]
+                    != "【打包隔离模板】{count}条"
+                )
+                checks["skill_restart_reuse_and_history_restore"] = True
                 from app.jiahui.auth import AuthStore as LocalStore
 
                 local_store = LocalStore(home / "data")

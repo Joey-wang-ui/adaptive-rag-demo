@@ -126,3 +126,16 @@ export interface ImportResult {
   skipped_pages?: { page: number; reason: string }[];
   message?: string;
 }
+
+export type SkillColumn = "name" | "code" | "brand" | "spec" | "storage" | "shelf_life" | "origin";
+export interface SkillTemplates {
+  product_lookup: { list_intro: string; clarification: string; max_results: number; columns: SkillColumn[]; details_layout: "full" | "compact" };
+  knowledge_qa: { instructions: string; layout: "bullets" | "numbered" | "paragraph" | "table" };
+  general_chat: { instructions: string };
+  web_search: { instructions: string };
+}
+export interface SkillSnapshot {
+  revision: string; updated_at: string | null; updated_by: string; templates: SkillTemplates; defaults: SkillTemplates; load_error: string | null;
+  history: { revision: string; updated_at: string | null; updated_by: string; restorable: boolean }[];
+}
+export interface SkillPreview { saved: false; mode: "rules" | "answer"; rules?: string | object; answer?: string; refused?: boolean; citations?: Citation[] }
